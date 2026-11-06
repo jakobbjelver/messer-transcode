@@ -82,7 +82,8 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	res.BytesBefore = before
 
 	// One worker per file, enforced on disk as well as in the state machine.
-	unlock, err := LockFile(filepath.Join(cfg.Paths.Scratch, fmt.Sprintf("%d.lock", t.ID)))
+	// Locks live in their own directory so they never look like scratch data.
+	unlock, err := LockFile(filepath.Join(cfg.Paths.Scratch, "locks", fmt.Sprintf("%d.lock", t.ID)))
 	if err != nil {
 		return res, abort(opts, t, "E_LOCKED", err.Error())
 	}
