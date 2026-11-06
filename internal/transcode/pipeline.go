@@ -143,16 +143,26 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	emit("encode", "", fmt.Sprintf("%s → %d kbps", t.Decision, t.TargetKbps))
 
 	var lastEmit time.Time
+	// ffmpeg emits progress fields on separate lines, so each callback carries
+	// only one of them. Accumulate here or the percentage never moves.
+	var prog struct {
+		outUS int64
+		speed float64
+	}
 	err = ffmpeg.Run(ctx, ffmpeg.Build(spec), func(p ffmpeg.Progress) {
-		// ffmpeg emits progress fields separately; keep the last known value of
-		// each and only report a few times a second.
+		if p.OutTimeUS > 0 {
+			prog.outUS = p.OutTimeUS
+		}
+		if p.Speed > 0 {
+			prog.speed = p.Speed
+		}
 		if time.Since(lastEmit) < 2*time.Second {
 			return
 		}
 		lastEmit = time.Now()
 		fraction := 0.0
-		if probe.DurationS > 0 && p.OutTimeUS > 0 {
-			fraction = float64(p.OutTimeUS) / 1e6 / probe.DurationS
+		if probe.DurationS > 0 && prog.outUS > 0 {
+			fraction = float64(prog.outUS) / 1e6 / probe.DurationS
 			if fraction > 1 {
 				fraction = 1
 			}
@@ -160,7 +170,7 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 		logf(Event{
 			FileID: t.ID, Path: t.Path, Stage: "encode",
 			Message:  fmt.Sprintf("%.0f%%", fraction*100),
-			Fraction: fraction, Speed: p.Speed,
+			Fraction: fraction, Speed: prog.speed,
 		})
 	})
 	if err != nil {
