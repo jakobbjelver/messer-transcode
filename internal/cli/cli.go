@@ -36,6 +36,12 @@ flags:
 exit codes: 0 ok · 1 runtime error · 2 usage · 3 invalid config
 `
 
+// say writes to stdout or stderr. The write error is deliberately ignored: a
+// closed pipe is not a reason to fail a command that already did its work.
+func say(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...)
+}
+
 // Run executes one command and returns the process exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
 	jsonOut := false
@@ -49,28 +55,28 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if len(rest) == 0 {
-		fmt.Fprint(stderr, usageText)
+		say(stderr, "%s", usageText)
 		return ExitUsage
 	}
 
 	switch rest[0] {
 	case "help", "-h", "--help":
-		fmt.Fprint(stdout, usageText)
+		say(stdout, "%s", usageText)
 		return ExitOK
 	case "version":
 		return cmdVersion(stdout, jsonOut)
 	case "schema":
 		_, _ = stdout.Write(config.Schema())
-		fmt.Fprintln(stdout)
+		say(stdout, "\n")
 		return ExitOK
 	case "validate":
 		if len(rest) < 2 {
-			fmt.Fprintln(stderr, "validate needs a path to config.json")
+			say(stderr, "validate needs a path to config.json\n")
 			return ExitUsage
 		}
 		return cmdValidate(stdout, stderr, rest[1], jsonOut)
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n\n%s", rest[0], usageText)
+		say(stderr, "unknown command %q\n\n%s", rest[0], usageText)
 		return ExitUsage
 	}
 }
@@ -85,7 +91,7 @@ func cmdVersion(stdout io.Writer, jsonOut bool) int {
 		})
 		return ExitOK
 	}
-	fmt.Fprintf(stdout, "messer-transcode %s (%s, built %s, %s)\n",
+	say(stdout, "messer-transcode %s (%s, built %s, %s)\n",
 		version.Version, version.Commit, version.BuildDate, version.Go())
 	return ExitOK
 }
@@ -96,7 +102,7 @@ func cmdValidate(stdout, stderr io.Writer, path string, jsonOut bool) int {
 		if jsonOut {
 			writeJSON(stdout, map[string]any{"ok": false, "error": err.Error()})
 		} else {
-			fmt.Fprintf(stderr, "%v\n", err)
+			say(stderr, "%v\n", err)
 		}
 		return ExitRuntime
 	}
@@ -106,7 +112,7 @@ func cmdValidate(stdout, stderr io.Writer, path string, jsonOut bool) int {
 		if jsonOut {
 			writeJSON(stdout, map[string]any{"ok": true, "file": path})
 		} else {
-			fmt.Fprintf(stdout, "ok  %s\n", path)
+			say(stdout, "ok  %s\n", path)
 		}
 		return ExitOK
 	}
@@ -118,7 +124,7 @@ func cmdValidate(stdout, stderr io.Writer, path string, jsonOut bool) int {
 		}
 		writeJSON(stdout, out)
 	} else {
-		fmt.Fprintf(stderr, "invalid  %s\n%v\n", path, err)
+		say(stderr, "invalid  %s\n%v\n", path, err)
 	}
 	return ExitInvalid
 }
