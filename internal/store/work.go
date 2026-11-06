@@ -97,6 +97,16 @@ WHERE id=?`, attempts, state, message, code, time.Now().Unix(), id)
 	return state, err
 }
 
+// Skip retires a file with a verdict instead of a failure: it was considered,
+// and the honest outcome is to leave it untouched. A quality floor that content
+// cannot reach is not an error, and retrying it forever would be.
+func (s *Store) Skip(ctx context.Context, id int64, code, reason string) error {
+	return s.exec(ctx, `
+UPDATE files SET state='skipped', decision='skip', reason=?, reason_code=?,
+  last_error=NULL, last_error_code=NULL, updated_at=?
+WHERE id=?`, reason, code, time.Now().Unix(), id)
+}
+
 // Event appends to the structured log. This is the table an agent queries when
 // asked "what failed last night, and why".
 func (s *Store) Event(ctx context.Context, level, code string, fileID int64, message, data string) error {

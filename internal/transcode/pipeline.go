@@ -225,9 +225,20 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 		}
 		// Only a quality miss is worth another encode. Anything else is a real
 		// failure and retrying it unchanged would just burn the same time again.
-		if verdict.Code != "E_VERIFY_VMAF" || attempt == len(targets)-1 {
+		if verdict.Code != "E_VERIFY_VMAF" {
 			res.Verdict = verdict
 			return res, abort(opts, t, verdict.Code, verdict.Detail)
+		}
+		if attempt == len(targets)-1 {
+			// Even the escalated bitrate missed. That is a property of the
+			// content (grain does not survive a re-encode), not a fault: leave
+			// the file exactly as it is and say why.
+			res.Verdict = verdict
+			reason := fmt.Sprintf("best attempt scored %s at %d kbps: not worth re-encoding",
+				verdictDetail(verdict), kbps)
+			emit("skip", "R_QUALITY_FLOOR", reason)
+			_ = opts.Store.Event(ctx, "info", "R_QUALITY_FLOOR", t.ID, reason, "")
+			return res, opts.Store.Skip(ctx, t.ID, "R_QUALITY_FLOOR", reason)
 		}
 	}
 	res.Verdict = verdict
@@ -311,6 +322,15 @@ func freeGB(path string) (float64, error) {
 	return float64(st.Bavail) * float64(st.Bsize) / 1e9, nil
 }
 
+// verdictDetail pulls the human sentence out of a verdict.
+func verdictDetail(v Verdict) string {
+	if v.Detail != "" {
+		return v.Detail
+	}
+	return v.Code
+}
+
+// mustSize returns a file's size, or zero when it is gone.
 func mustSize(path string) int64 {
 	info, err := os.Stat(path)
 	if err != nil {

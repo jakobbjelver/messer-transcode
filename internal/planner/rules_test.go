@@ -30,7 +30,7 @@ func TestDecide(t *testing.T) {
 		{
 			name:  "1080p H.264 at 7.8 Mbps is re-encoded",
 			facts: media.Facts{Height: 1080, Codec: "h264", BitrateKbps: 7796},
-			want:  "encode", code: "R_H264_ENCODE", target: 5500,
+			want:  "encode", code: "R_H264_ENCODE", target: 6000,
 		},
 		{
 			name:  "1080p H.264 already below the target is left alone",
@@ -39,7 +39,7 @@ func TestDecide(t *testing.T) {
 		},
 		{
 			name:  "a marginal saving is not worth an encode",
-			facts: media.Facts{Height: 1080, Codec: "h264", BitrateKbps: 5600},
+			facts: media.Facts{Height: 1080, Codec: "h264", BitrateKbps: 6500},
 			want:  "skip", code: "R_LOW_SAVING",
 		},
 		{
@@ -65,12 +65,12 @@ func TestDecide(t *testing.T) {
 		{
 			name:  "4K picks the 4K rung, not the 1080p one",
 			facts: media.Facts{Height: 2160, Codec: "hevc", BitrateKbps: 20000},
-			want:  "encode", code: "R_HEVC_OVERBITRATE", target: 16000,
+			want:  "encode", code: "R_HEVC_OVERBITRATE", target: 15600,
 		},
 		{
 			name:  "4K H.264 uses its own rung",
 			facts: media.Facts{Height: 2160, Codec: "h264", BitrateKbps: 30000},
-			want:  "encode", code: "R_H264_ENCODE", target: 14000,
+			want:  "encode", code: "R_H264_ENCODE", target: 15600,
 		},
 		{
 			name:  "unknown codec falls through to skip",
@@ -142,11 +142,11 @@ func TestTargetKbps(t *testing.T) {
 		want   int
 		ok     bool
 	}{
-		{"h264", 2160, 14000, true},
-		{"h264", 1080, 5500, true},
-		{"h264", 999, 2200, true},
-		{"h264", 480, 900, true},
-		{"hevc", 2160, 16000, true},
+		{"h264", 2160, 15600, true},
+		{"h264", 1080, 6000, true},
+		{"h264", 999, 2700, true},
+		{"h264", 480, 960, true},
+		{"hevc", 2160, 15600, true},
 		{"hevc", 1080, 6000, true},
 		{"hevc", 400, 960, true},
 		{"av1", 1080, 0, false},

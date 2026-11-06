@@ -50,14 +50,24 @@ to 92.9 or 95.0 depending on which tier it came from.
 ## Finding 3 — the spread is the real problem
 
 At 6,000 kbps the H.264 worst window is 84.7 while the mean is 92.9. A single rung is too generous
-for clean animation and too aggressive for `Psycho`. Two ways out, in order of cost:
+for clean animation and too aggressive for `Psycho`.
 
-1. **Verify-then-retry** (not built): if verification scores below the expected floor, re-encode once
-   at 1.25× the target. One extra encode for the small share of files that need it, and every file
-   ends up meeting its promise. This is the next piece of work.
-2. **`quality.mode = "probe"`** (not built): search the ladder per file. Costs three to five encodes
-   per file, roughly seven extra hours across the current backlog. Only worth it if retry proves
-   insufficient.
+The first real encode after calibration showed how bad this is: `Friends S02E16`, a grainy Bluray
+HEVC at 10.1 Mbps, scored **90.8** at 6,000 kbps and **92.5** even at 8,400 — against a 95
+expectation. Grain does not survive a re-encode at any bitrate, so no amount of escalation reaches
+the floor on that file.
+
+Two mechanisms now handle it:
+
+1. **Two-window verification.** A single 60-second sample moves several points on grain-heavy
+   content, so the quality check averages windows at 40 % and 70 % of the duration.
+2. **One escalation, then leave it alone.** A quality miss re-encodes once at 1.4× the target.
+   If that also misses, the file is **skipped with `R_QUALITY_FLOOR`** — not failed, not retried
+   forever. The original is untouched and the UI says why.
+
+That last point matters more than it looks: a file whose content cannot be re-encoded without
+visible loss is not an error condition, it is the correct verdict. The projection of 671 GB is
+therefore an upper bound, and a few percent of the H.264 tier will land in `R_QUALITY_FLOOR`.
 
 ## Applied table
 
