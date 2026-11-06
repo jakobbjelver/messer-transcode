@@ -37,6 +37,7 @@ type Config struct {
 	Rules     []Rule    `json:"rules"`
 	Safety    Safety    `json:"safety"`
 	Notify    Notify    `json:"notify"`
+	Server    Server    `json:"server"`
 }
 
 // Library is one root that the node walks.
@@ -164,6 +165,14 @@ type Notify struct {
 	JellyfinRefresh bool     `json:"jellyfin_refresh"`
 }
 
+// Server configures the HTTP surface. The node authenticates with the token;
+// without one the server refuses to start rather than serving an open
+// endpoint that can claim jobs.
+type Server struct {
+	Listen string `json:"listen"`
+	Token  string `json:"token"`
+}
+
 // Schema returns the embedded JSON Schema.
 func Schema() []byte { return schemaJSON }
 
@@ -249,6 +258,9 @@ func (c *Config) applyDefaults() {
 	}
 	if len(c.Notify.On) == 0 {
 		c.Notify.On = []string{"replaced", "failed"}
+	}
+	if c.Server.Listen == "" {
+		c.Server.Listen = ":8099"
 	}
 	// VerifyVMAF is a bool: false is a legitimate explicit choice and is left
 	// alone. The shipped example sets it; a config that omits it gets false.

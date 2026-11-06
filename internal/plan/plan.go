@@ -115,7 +115,6 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	for _, u := range undecided {
 		v := planner.DecideFile(u.Path, opts.Config, plannerFacts(u))
 		d := store.Decision{
-			Do:       v.Decision,
 			Decision: v.Decision,
 			Code:     v.Code,
 			Reason:   v.Reason,

@@ -1,0 +1,18 @@
+{{define "content"}}
+<section>
+  <div class="sec"><span class="no">[01]</span><span>Build</span><span class="rule"></span></div>
+  <dl class="kv">
+    <dt>Version</dt><dd>{{.Version}}</dd>
+    <dt>Commit</dt><dd>{{.Commit}}</dd>
+    <dt>Built</dt><dd>{{.BuildDate}}</dd>
+    <dt>Uptime</dt><dd>{{.Uptime}}</dd>
+    <dt>Database</dt><dd>{{.DBPath}} <span class="code">{{bytes .DBSize}}</span></dd>
+  </dl>
+</section>
+
+<section>
+  <div class="sec"><span class="no">[02]</span><span>Configured behaviour</span><span class="rule"></span>
+    <span class="aside">{{.ConfigPath}}</span></div>
+  <pre>{{.ConfigJSON}}</pre>
+</section>
+{{end}}

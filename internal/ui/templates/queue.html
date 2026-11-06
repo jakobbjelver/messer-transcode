@@ -1,0 +1,42 @@
+{{define "content"}}
+<section>
+  <div class="sec"><span class="no">[01]</span><span>The queue</span><span class="rule"></span>
+    <span class="aside">{{len .Rows}} shown · page {{.PageNo}}</span></div>
+
+  <div class="filters">
+    {{range .Filters}}
+      <a href="{{.Href}}" {{if .Active}}aria-current="true"{{end}}>{{.Label}}{{if .Count}} {{.Count}}{{end}}</a>
+    {{end}}
+  </div>
+
+  {{if .Rows}}
+  <table>
+    <thead>
+      <tr>
+        <th>File</th><th>State</th><th>Why</th>
+        <th class="num">Source</th><th class="num">Target</th><th class="num">Size</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Rows}}
+      <tr>
+        <td class="path"><a href="/files/{{.ID}}" title="{{.Path}}">{{base .Path}}</a></td>
+        <td><span class="st st-{{.State}}">{{.State}}</span></td>
+        <td class="code">{{.ReasonCode}}</td>
+        <td class="num">{{.Bitrate}} kbps</td>
+        <td class="num">{{if .Target}}{{.Target}} kbps{{else}}—{{end}}</td>
+        <td class="num">{{bytes .SizeBytes}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="empty">Nothing here. The planner has either not run, or found nothing to do.</div>
+  {{end}}
+
+  <div class="filters" style="margin-top:18px">
+    {{if .Prev}}<a href="{{.Prev}}">← previous</a>{{end}}
+    {{if .Next}}<a href="{{.Next}}">next →</a>{{end}}
+  </div>
+</section>
+{{end}}

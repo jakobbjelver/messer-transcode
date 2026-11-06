@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"io/fs"
 	"path/filepath"
 	"testing"
 
@@ -41,8 +42,14 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	if err := s2.DB().QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 1 {
-		t.Errorf("user_version = %d, want 1", version)
+	// The version is the count of applied migrations, so this asserts that every
+	// shipped migration ran exactly once without pinning a hand-written number.
+	entries, err := fs.ReadDir(migrationsFS, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := len(entries); version != want {
+		t.Errorf("user_version = %d, want %d (one per migration)", version, want)
 	}
 }
 
@@ -93,7 +100,7 @@ func TestScanProbeDecideFlow(t *testing.T) {
 	}
 
 	if err := s.SetDecision(ctx, first.ID, Decision{
-		Do: "encode", Decision: "encode", Code: "R_H264_ENCODE",
+		Decision: "encode", Code: "R_H264_ENCODE",
 		Reason: "H.264 at 8000 kbps → HEVC 5500 kbps", KeyKbps: 5500, State: "planned",
 	}); err != nil {
 		t.Fatal(err)

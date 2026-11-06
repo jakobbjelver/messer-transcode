@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} — messer/transcode</title>
+<link rel="stylesheet" href="/static/slate.css">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+</head>
+<body{{if .JobID}} data-job="{{.JobID}}"{{end}}>
+<div class="wrap">
+
+  <header class="slate-head">
+    <a class="wordmark" href="/"><span class="glyph"></span>Messer<span class="slash">/</span>Transcode</a>
+    <div class="meta-line">
+      <span>REEL <b>{{.Reel}}</b></span>
+      <span>{{.Clock}}</span>
+      <span>WINDOW <b>{{.Window}}</b></span>
+      <span class="st {{.StatusClass}}">{{.StatusWord}}</span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <a href="/" {{if eq .Page "overview"}}aria-current="page"{{end}}>Overview</a>
+    <a href="/queue" {{if eq .Page "queue"}}aria-current="page"{{end}}>Queue</a>
+    <a href="/queue?state=failed" {{if eq .Page "failed"}}aria-current="page"{{end}}>Failures</a>
+    <a href="/settings" {{if eq .Page "settings"}}aria-current="page"{{end}}>Settings</a>
+  </nav>
+
+  <main>
+    {{template "content" .}}
+  </main>
+
+</div>
+
+<script>
+// One stream, no polling. The server decides what changed; this only paints it.
+// data-live must sit on the element whose text IS the value: replacing
+// textContent wipes any child nodes, so a wrapper carrying a unit would lose it.
+(function () {
+  var bar = document.querySelector('[data-bar]');
+  var job = document.body.getAttribute('data-job');
+  if (!window.EventSource) return;
+
+  var es = new EventSource('/events');
+  es.onmessage = function (m) {
+    var d;
+    try { d = JSON.parse(m.data); } catch (e) { return; }
+
+    // A different file started, or the run ended: re-render rather than guess.
+    if ((d.job || '') !== (job || '')) { location.reload(); return; }
+
+    document.querySelectorAll('[data-live]').forEach(function (el) {
+      var k = el.getAttribute('data-live');
+      if (d[k] !== undefined) el.textContent = d[k];
+    });
+    if (bar && d.pct !== undefined) bar.style.width = d.pct + '%';
+  };
+})();
+</script>
+</body>
+</html>

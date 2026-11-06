@@ -195,6 +195,9 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 				Message:  fmt.Sprintf("%.0f%%", fraction*100),
 				Fraction: fraction, Speed: prog.speed,
 			})
+			// Also land it on the row, so the dashboard can read progress from
+			// another process: the server never sees this callback.
+			_ = opts.Store.SetProgress(ctx, t.ID, fraction, prog.speed)
 		})
 		if runErr != nil {
 			return res, abort(opts, t, "E_ENCODE_FFMPEG", runErr.Error())
@@ -207,6 +210,7 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 			return res, abort(opts, t, "E_ENCODE_NO_OUTPUT", detail)
 		}
 		res.BytesAfter = mustSize(out)
+		_ = opts.Store.SetProgress(ctx, t.ID, 1, prog.speed)
 
 		// Verify before anything is allowed to move.
 		_ = opts.Store.SetState(ctx, t.ID, "verifying")

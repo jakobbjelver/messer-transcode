@@ -5,15 +5,16 @@ import (
 	"time"
 )
 
-// Work is a file the runner may pick up.
+// Work is a file the runner may pick up. The JSON tags are the wire contract
+// the node claims against, so they are snake_case like everything else.
 type Work struct {
-	ID         int64
-	Path       string
-	Library    string
-	Decision   string
-	TargetKbps int
-	SizeBytes  int64
-	DurationS  float64
+	ID         int64   `json:"id"`
+	Path       string  `json:"path"`
+	Library    string  `json:"library"`
+	Decision   string  `json:"decision"`
+	TargetKbps int     `json:"target_kbps"`
+	SizeBytes  int64   `json:"size_bytes"`
+	DurationS  float64 `json:"duration_seconds"`
 }
 
 // ClaimWork returns up to limit planned files that need real work and moves

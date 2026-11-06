@@ -143,12 +143,11 @@ WHERE id = ?`, message, code, time.Now().Unix(), id)
 
 // Decision is the planner's verdict.
 type Decision struct {
-	Do       string
+	Decision string
 	Code     string
 	Reason   string
 	KeyKbps  int
 	State    string
-	Decision string
 }
 
 // SetDecision stores a verdict and its target bitrate.
