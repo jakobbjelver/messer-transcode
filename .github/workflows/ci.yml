@@ -32,7 +32,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: golangci/golangci-lint-action@v6
+      # v8 of the action ships golangci-lint v2, which is built with a Go
+      # toolchain new enough to target this module's go directive. v6 shipped
+      # 1.64 (built with go1.24) and refused to run.
+      - uses: golangci/golangci-lint-action@v8
         with:
           version: latest
 
