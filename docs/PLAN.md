@@ -276,7 +276,8 @@ encode. Scratch free space is a first-class gauge in the UI and a scheduling con
       { "codec": "hevc", "height_gte": 1000, "kbps": 6000 },
       { "codec": "hevc", "height_gte": 700,  "kbps": 2400 }
     ],
-    "probe_outliers_above_kbps": 12000
+    "probe_outliers_above_kbps": 12000,
+    "min_saving_pct": 10
   },
 
   "audio": {
@@ -325,6 +326,12 @@ encode. Scratch free space is a first-class gauge in the UI and a scheduling con
 
 `quality.mode = "table"` uses the calibrated table. `"probe"` runs the per-file ladder for
 outliers. `"fixed"` uses `kbps` verbatim (for testing).
+
+Two guards run after a rule says `encode`, and both were added because M1's plan run over real
+files exposed the bug they prevent: if the ladder target meets or exceeds the source bitrate the
+file is skipped (`R_ALREADY_LEAN`) — otherwise a 2 Mbps H.264 file is "re-encoded" to 5.5 Mbps and
+grows — and if the projected saving is under `min_saving_pct` it is skipped (`R_LOW_SAVING`), since
+a 3 % win does not pay for an hour of encoding.
 
 ---
 
