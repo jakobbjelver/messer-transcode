@@ -76,7 +76,7 @@ func IsHearingImpaired(title string) bool {
 		return true
 	}
 	for _, field := range strings.FieldsFunc(t, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z')
+		return r < 'a' || r > 'z'
 	}) {
 		if field == "cc" {
 			return true
