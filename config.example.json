@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "libraries": [
+    {
+      "name": "media",
+      "root": "/Volumes/Media/Library",
+      "extensions": [".mkv", ".mp4", ".mov", ".m4v"],
+      "exclude": ["**/Sample/**", "**/*.sample.mkv", "**/.*"]
+    }
+  ],
+  "schedule": {
+    "weekday": "00:30-05:30",
+    "weekend": "02:00-07:00",
+    "drain_before_minutes": 15,
+    "timezone": "Europe/Copenhagen"
+  },
+  "workers": { "encode": 1, "probe": 2, "ingest_buffer": 2 },
+  "paths": {
+    "scratch": "/Volumes/Active/Hot/transcode",
+    "quarantine": "/Volumes/Media/Quarantine"
+  },
+  "quality": {
+    "mode": "table",
+    "vmaf_target": 95.0,
+    "vmaf_tolerance": 1.0,
+    "table": [
+      { "codec": "h264", "height_gte": 2000, "kbps": 14000 },
+      { "codec": "h264", "height_gte": 1000, "kbps": 5500 },
+      { "codec": "h264", "height_gte": 700, "kbps": 2200 },
+      { "codec": "h264", "height_gte": 0, "kbps": 900 },
+      { "codec": "hevc", "height_gte": 2000, "kbps": 16000 },
+      { "codec": "hevc", "height_gte": 1000, "kbps": 6000 },
+      { "codec": "hevc", "height_gte": 700, "kbps": 2400 }
+    ],
+    "probe_outliers_above_kbps": 12000
+  },
+  "audio": {
+    "keep_languages": ["eng", "swe", "dan"],
+    "keep_original_language": true,
+    "max_tracks": 3,
+    "drop_commentary": true,
+    "transcode": [{ "from": ["truehd", "flac", "pcm_bluray"], "to": "eac3", "kbps": 448 }]
+  },
+  "subtitles": {
+    "keep_languages": ["eng", "swe", "dan"],
+    "drop_commentary": true,
+    "drop_closed_captions": true,
+    "keep_forced": true
+  },
+  "rules": [
+    { "when": { "height_lt": 1080 }, "do": "remux", "code": "R_LOW_RES" },
+    { "when": { "codec": "hevc", "bitrate_kbps_lt": 5000 }, "do": "remux", "code": "R_HEVC_EFFICIENT" },
+    { "when": { "codec": "hevc", "bitrate_kbps_gte": 8000 }, "do": "encode", "code": "R_HEVC_OVERBITRATE" },
+    { "when": { "codec": "h264", "bitrate_kbps_gte": 5000 }, "do": "encode", "code": "R_H264_ENCODE" },
+    { "when": { "codec": "h264" }, "do": "encode", "code": "R_H264_LOW_BITRATE" },
+    { "when": { "default": true }, "do": "skip", "code": "R_NO_RULE" }
+  ],
+  "safety": {
+    "min_free_gb": 150,
+    "size_ratio_min": 0.35,
+    "size_ratio_max": 0.98,
+    "duration_tolerance_s": 2,
+    "keep_quarantine_days": 14,
+    "verify_sample_seconds": 60,
+    "verify_vmaf": true,
+    "max_attempts": 3
+  },
+  "notify": {
+    "radarr": "http://host.docker.internal:7878",
+    "sonarr": "http://host.docker.internal:8989",
+    "on": ["replaced", "failed"],
+    "jellyfin_refresh": true
+  }
+}

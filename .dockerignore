@@ -1,0 +1,8 @@
+.git
+bin
+.dev
+*.db
+*.db-wal
+*.db-shm
+config.json
+.DS_Store

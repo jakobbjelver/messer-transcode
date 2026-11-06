@@ -1,0 +1,17 @@
+# build output
+/bin/
+
+# local state and scratch
+/.dev/
+*.db
+*.db-wal
+*.db-shm
+
+# real configuration stays off the repo; the example is tracked
+/config.json
+
+# editor and OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

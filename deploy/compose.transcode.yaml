@@ -1,0 +1,26 @@
+# Server only. No media mounts, no ffmpeg, no scale-to-zero: the orchestrator
+# must answer whenever a node polls, which is the failure mode that quietly
+# killed the previous setup.
+services:
+  server:
+    image: ghcr.io/m3sserstudi0s/messer-transcode:${IMAGE_TAG:-stable}
+    container_name: transcode-server
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Copenhagen
+      MT_CONFIG: /etc/messer-transcode/config.json
+      MT_DB: /var/lib/messer-transcode/state.db
+      MT_ADDR: 0.0.0.0:8099
+    volumes:
+      - ./config.json:/etc/messer-transcode/config.json:ro
+      - transcode-state:/var/lib/messer-transcode
+    ports:
+      - "8099:8099"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/messer-transcode", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  transcode-state:
