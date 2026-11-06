@@ -36,17 +36,24 @@ func (e *RunError) Unwrap() error { return e.Err }
 // Run executes ffmpeg and reports progress. Cancelling ctx kills the process;
 // the caller decides whether that is a pause, a shutdown or a failure.
 func Run(ctx context.Context, args []string, onProgress func(Progress)) error {
+	_, err := RunTail(ctx, args, onProgress)
+	return err
+}
+
+// RunTail is Run, plus the tail of stderr even on success. When a process exits
+// zero but leaves no output, that tail is the only evidence there is.
+func RunTail(ctx context.Context, args []string, onProgress func(Progress)) (string, error) {
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return &RunError{Code: "E_ENCODE_FFMPEG", Err: err}
+		return "", &RunError{Code: "E_ENCODE_FFMPEG", Err: err}
 	}
 	tail := &tailWriter{max: 8192}
 	cmd.Stderr = tail
 
 	if err := cmd.Start(); err != nil {
-		return &RunError{Code: "E_ENCODE_FFMPEG", Err: err}
+		return "", &RunError{Code: "E_ENCODE_FFMPEG", Err: err}
 	}
 
 	scanner := bufio.NewScanner(stdout)
@@ -76,12 +83,12 @@ func Run(ctx context.Context, args []string, onProgress func(Progress)) error {
 		if ctx.Err() != nil {
 			code = "E_ENCODE_CANCELLED"
 		}
-		return &RunError{Code: code, Stderr: tail.String(), Err: err}
+		return tail.String(), &RunError{Code: code, Stderr: tail.String(), Err: err}
 	}
 	if ctx.Err() != nil {
-		return &RunError{Code: "E_ENCODE_CANCELLED", Stderr: tail.String(), Err: ctx.Err()}
+		return tail.String(), &RunError{Code: "E_ENCODE_CANCELLED", Stderr: tail.String(), Err: ctx.Err()}
 	}
-	return nil
+	return tail.String(), nil
 }
 
 // report sends a partial update; callers merge the fields they care about.

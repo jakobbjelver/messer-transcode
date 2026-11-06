@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -171,7 +172,7 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 			outUS int64
 			speed float64
 		}
-		err = ffmpeg.Run(ctx, ffmpeg.Build(spec), func(p ffmpeg.Progress) {
+		encodeTail, runErr := ffmpeg.RunTail(ctx, ffmpeg.Build(spec), func(p ffmpeg.Progress) {
 			if p.OutTimeUS > 0 {
 				prog.outUS = p.OutTimeUS
 			}
@@ -195,11 +196,15 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 				Fraction: fraction, Speed: prog.speed,
 			})
 		})
-		if err != nil {
-			return res, abort(opts, t, "E_ENCODE_FFMPEG", err.Error())
+		if runErr != nil {
+			return res, abort(opts, t, "E_ENCODE_FFMPEG", runErr.Error())
 		}
-		if info, err := os.Stat(out); err != nil || info.Size() == 0 {
-			return res, abort(opts, t, "E_ENCODE_NO_OUTPUT", "ffmpeg exited cleanly but wrote nothing")
+		if info, statErr := os.Stat(out); statErr != nil || info.Size() == 0 {
+			detail := "ffmpeg exited cleanly but wrote nothing"
+			if tailText := strings.TrimSpace(encodeTail); tailText != "" {
+				detail += ": " + tailText
+			}
+			return res, abort(opts, t, "E_ENCODE_NO_OUTPUT", detail)
 		}
 		res.BytesAfter = mustSize(out)
 
