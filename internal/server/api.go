@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -246,5 +245,3 @@ func osStat(path string) (int64, error) {
 	}
 	return fi.Size(), nil
 }
-
-var errNoRows = errors.New("no rows")

@@ -191,17 +191,16 @@ func (s *Server) queuePage(w http.ResponseWriter, r *http.Request) {
 	}
 	const perPage = 100
 
-	rows, err := s.st.Queue(ctx, state, decision, perPage, (page-1)*perPage)
+	// Ask for one more than a page: its presence is the answer to "is there a
+	// next page", which avoids a second count query over 3,000 rows.
+	rows, err := s.st.Queue(ctx, state, decision, perPage+1, (page-1)*perPage)
 	if err != nil {
 		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
 		return
 	}
-	// One extra row tells us whether a next page exists without a count query.
-	if len(rows) == perPage {
-		extra, err := s.st.Queue(ctx, state, decision, 1, page*perPage)
-		if err == nil && len(extra) == 0 {
-			rows = rows[:len(rows)]
-		}
+	hasMore := len(rows) > perPage
+	if hasMore {
+		rows = rows[:perPage]
 	}
 	snap, err := s.st.Snapshot(ctx)
 	if err != nil {
@@ -238,12 +237,12 @@ func (s *Server) queuePage(w http.ResponseWriter, r *http.Request) {
 		PageNo:  page,
 	}
 	if state == "failed" {
-		v.base.Page = "failed"
+		v.Page = "failed"
 	}
 	if page > 1 {
 		v.Prev = pageURL(state, decision, page-1)
 	}
-	if len(rows) == perPage {
+	if hasMore {
 		v.Next = pageURL(state, decision, page+1)
 	}
 	s.render(w, "queue", v)
