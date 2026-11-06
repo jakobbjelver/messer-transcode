@@ -785,6 +785,21 @@ the quality target is the only dial.
     calibration exposed; `quality.mode = "probe"` remains unimplemented and is now unnecessary.
   Next milestone: M3 (server API and UI) — M6 was pulled forward because it decides every file.
 
+- **rev 5** (2026-11-06): **M3 core complete — the orchestrator runs and reports.** `serve` brings up the
+  read API, the film-slate pages, and the four node endpoints (register, claim, heartbeat, result).
+  Two decisions worth keeping:
+  * **Progress lives on the file row, not in memory.** The encoder is a different process (eventually a
+    different machine), so an in-memory tracker would be a lie. `progress`/`speed` columns are written
+    on every callback older than two seconds; the dashboard reads the database, one second at a time,
+    over a single EventSource.
+  * **Claiming is a state transition inside a transaction**, not a read — two nodes cannot take the
+    same file. With `server.token` unset the node API answers 503 rather than serving an open court.
+  The first four screenshots found four defects that no test would have: flex ticks collapsing to zero
+  height (the queue strip rendered as a blank panel), `data-live` on a wrapper eating the unit label a
+  second after load, raw JSON in the audio/subtitle rows, and a "WINDOW SHUT" note sitting next to a
+  visibly running job. All fixed; `docs/server.md` records them so they are not relearned.
+  Remaining for M4: the node agent itself, which turns these endpoints into an actual worker.
+
 ### How to resume after a context reset
 
 1. Read this file top to bottom — §1 carries the measured facts, §2 the binding decisions.
