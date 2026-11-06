@@ -101,7 +101,7 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	if err := CopyFile(t.Path, src, nil); err != nil {
 		return res, abort(opts, t, "E_SOURCE_MISSING", "ingest: "+err.Error())
 	}
-	defer os.Remove(src)
+	defer func() { _ = os.Remove(src) }()
 
 	same, err := SameSize(t.Path, src)
 	if err != nil || !same {
@@ -137,9 +137,9 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 
 	out := filepath.Join(cfg.Paths.Scratch, fmt.Sprintf("%d.out.mkv", t.ID))
 	spec.Dst = out
-	defer os.Remove(out)
+	defer func() { _ = os.Remove(out) }()
 
-	opts.Store.SetState(ctx, t.ID, "encoding")
+	_ = opts.Store.SetState(ctx, t.ID, "encoding")
 	emit("encode", "", fmt.Sprintf("%s → %d kbps", t.Decision, t.TargetKbps))
 
 	var lastEmit time.Time
@@ -172,7 +172,7 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	res.BytesAfter = mustSize(out)
 
 	// Verify before anything is allowed to move.
-	opts.Store.SetState(ctx, t.ID, "verifying")
+	_ = opts.Store.SetState(ctx, t.ID, "verifying")
 	band := RatioBand{Min: cfg.Safety.SizeRatioMin, Max: cfg.Safety.SizeRatioMax}
 	if t.Decision == "remux" {
 		// A remux should be roughly the same size; the encode bands would
@@ -204,10 +204,10 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	}
 
 	// Place: copy next to the destination, then swap atomically.
-	opts.Store.SetState(ctx, t.ID, "replacing")
+	_ = opts.Store.SetState(ctx, t.ID, "replacing")
 	dir := filepath.Dir(t.Path)
 	tmp := filepath.Join(dir, fmt.Sprintf(".messer-%d.tmp", t.ID))
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if err := CopyFile(out, tmp, nil); err != nil {
 		return res, abort(opts, t, "E_REPLACE_COPY", err.Error())
 	}
