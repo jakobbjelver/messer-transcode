@@ -752,6 +752,23 @@ the quality target is the only dial.
   M0 and public at M9. M0 now creates the private repo and the thin skill. Still no code written;
   next action is M0.
 
+- **rev 3** (2026-11-06): **M0, M1 and M2 are complete and their gates passed.**
+  M0: private repo, config schema + validator, CI, 11.8 MB distroless image.
+  M1: scan/probe/plan over the whole library in 4m22s; the diff against Tdarr is in
+  `docs/plan-diff.md` (Tdarr wanted 92 % of the library, we want 14 %).
+  M2: encode → verify → replace proven on 20 copies and one real episode, evidence in
+  `docs/rehearsal-m2.md`. Two policy guards were added during M2 (`R_ALREADY_LEAN`,
+  `R_LOW_SAVING`) after the plan run showed low-bitrate files being "re-encoded" upward.
+  Findings that change later milestones:
+  * The HEVC 1080p rung at 6,000 kbps produced VMAF 94 against a 95 target — passing at the
+    tolerance boundary. M6 must test 6,500 and 7,000 on a real sample before the first
+    unattended night.
+  * Only Matroska output is implemented; 19 non-MKV files (0.6 %) are skipped with
+    `R_CONTAINER_UNSUPPORTED`. Revisit if it ever matters.
+  * The `vmaf` column stays 0 until M6; verification currently covers duration, size ratio
+    and a four-window decode.
+  Next milestone: M3 (server API and UI).
+
 ### How to resume after a context reset
 
 1. Read this file top to bottom — §1 carries the measured facts, §2 the binding decisions.
