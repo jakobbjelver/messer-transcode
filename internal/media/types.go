@@ -37,6 +37,7 @@ type Scanned struct {
 // Probe is everything we know about a file before deciding what to do with it.
 type Probe struct {
 	Container   string       `json:"container"`
+	VideoIndex  int          `json:"video_index"`
 	VideoCodec  string       `json:"video_codec"`
 	Width       int          `json:"width"`
 	Height      int          `json:"height"`

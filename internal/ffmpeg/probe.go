@@ -117,6 +117,7 @@ func FromRaw(raw rawProbe) (media.Probe, error) {
 				continue
 			}
 			p.VideoCodec = s.CodecName
+			p.VideoIndex = s.Index
 			p.Width = s.Width
 			p.Height = s.Height
 			p.PixFmt = s.PixFmt

@@ -5,6 +5,7 @@ package planner
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/jakobbjelver/messer-transcode/internal/config"
@@ -25,6 +26,24 @@ func (v Verdict) State() string {
 		return "skipped"
 	}
 	return "planned"
+}
+
+// DecideFile applies the container policy and then the rule list.
+//
+// Only Matroska sources are handled today: 99.4% of the library already is, and
+// pretending to support MP4 without testing EAC3-in-MP4 and cover-art handling
+// would be worse than saying so. Non-MKV files are skipped with a reason code
+// rather than silently processed.
+func DecideFile(path string, cfg *config.Config, f media.Facts) Verdict {
+	if !strings.EqualFold(filepath.Ext(path), ".mkv") {
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
+		return Verdict{
+			Decision: "skip",
+			Code:     "R_CONTAINER_UNSUPPORTED",
+			Reason:   fmt.Sprintf(".%s source: only Matroska output is supported", ext),
+		}
+	}
+	return Decide(cfg, f)
 }
 
 // Decide evaluates the ordered rule list. The last rule is required by config

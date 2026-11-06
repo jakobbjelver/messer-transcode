@@ -78,6 +78,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return cmdValidate(stdout, stderr, rest[1], jsonOut)
 	case "plan":
 		return cmdPlan(stdout, stderr, rest[1:], jsonOut)
+	case "run":
+		return cmdRun(stdout, stderr, rest[1:], jsonOut)
 	default:
 		say(stderr, "unknown command %q\n\n%s", rest[0], usageText)
 		return ExitUsage
