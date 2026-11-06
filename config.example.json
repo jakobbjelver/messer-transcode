@@ -32,7 +32,8 @@
       { "codec": "hevc", "height_gte": 1000, "kbps": 6000 },
       { "codec": "hevc", "height_gte": 700, "kbps": 2400 }
     ],
-    "probe_outliers_above_kbps": 12000
+    "probe_outliers_above_kbps": 12000,
+    "min_saving_pct": 10
   },
   "audio": {
     "keep_languages": ["eng", "swe", "dan"],

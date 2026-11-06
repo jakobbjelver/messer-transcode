@@ -83,7 +83,8 @@
             }
           }
         },
-        "probe_outliers_above_kbps": { "type": "integer", "minimum": 0 }
+        "probe_outliers_above_kbps": { "type": "integer", "minimum": 0 },
+        "min_saving_pct": { "type": "integer", "minimum": 0, "maximum": 80 }
       }
     },
     "audio": {

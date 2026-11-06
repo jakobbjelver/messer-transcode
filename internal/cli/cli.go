@@ -27,6 +27,7 @@ usage: messer-transcode <command> [flags]
 commands:
   version                 print build metadata
   validate <config.json>  validate a config and report every problem
+  plan                    scan, probe and decide — writes nothing to media
   schema                  print the JSON Schema for config.json
   help                    this text
 
@@ -75,6 +76,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return ExitUsage
 		}
 		return cmdValidate(stdout, stderr, rest[1], jsonOut)
+	case "plan":
+		return cmdPlan(stdout, stderr, rest[1:], jsonOut)
 	default:
 		say(stderr, "unknown command %q\n\n%s", rest[0], usageText)
 		return ExitUsage

@@ -76,6 +76,17 @@ type Quality struct {
 	VMAFTolerance      float64      `json:"vmaf_tolerance"`
 	Table              []QualityRow `json:"table"`
 	ProbeOutliersAbove int          `json:"probe_outliers_above_kbps"`
+	// MinSavingPct is the smallest projected size reduction worth spending an
+	// encode on. Absent means 10 percent; an explicit 0 disables the floor.
+	MinSavingPct *int `json:"min_saving_pct,omitempty"`
+}
+
+// MinSaving resolves the saving floor.
+func (q Quality) MinSaving() int {
+	if q.MinSavingPct == nil {
+		return 10
+	}
+	return *q.MinSavingPct
 }
 
 // QualityRow is one rung of the bitrate ladder. Rows are matched
