@@ -84,6 +84,22 @@ the H.264 target rose from 5,500 to 6,000 and 74 more files fell below the 10 % 
 the cost of using a measured number instead of an assumed one, and it is the right trade — 671 GB
 with a quality promise per file beats 780 GB with a guess.
 
+## Validation
+
+Two real encodes, on copies, with quality verification live:
+
+| File | Source | Result | VMAF | Expected |
+|---|---|---|---:|---:|
+| `The Breakthrough S01E02` (H.264 7,549 kbps) | 1.99 GB | 1.42 GB (−29 %) | **93.4** | 92.9 ✓ |
+| `Friends S02E16` (HEVC 10,133 kbps, grainy Bluray) | 1.72 GB | untouched | 92.5 at 8,400 | 95.0 ✗ |
+
+The first passes with 0.5 points to spare and keeps both audio tracks and three subtitle tracks.
+The second is refused — at 6,000 it scored 90.8, at 8,400 it scored 92.5, and both are below the
+94.0 floor. It is marked `R_QUALITY_FLOOR` and left exactly as it was.
+
+That is the mechanism working: one file gains 29 % of its size, the other costs nothing because
+re-encoding it would have been a mistake.
+
 ## Reproducing
 
 ```sh
