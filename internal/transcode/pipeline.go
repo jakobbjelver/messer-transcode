@@ -126,7 +126,6 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 		Src:        src,
 		VideoIndex: streams.VideoIndex,
 		VideoCopy:  t.Decision == "remux",
-		TargetKbps: t.TargetKbps,
 	}
 	for _, a := range streams.Audio {
 		spec.Audio = append(spec.Audio, ffmpeg.AudioSpec{
@@ -139,66 +138,97 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	spec.Dst = out
 	defer func() { _ = os.Remove(out) }()
 
-	_ = opts.Store.SetState(ctx, t.ID, "encoding")
-	emit("encode", "", fmt.Sprintf("%s → %d kbps", t.Decision, t.TargetKbps))
-
-	var lastEmit time.Time
-	// ffmpeg emits progress fields on separate lines, so each callback carries
-	// only one of them. Accumulate here or the percentage never moves.
-	var prog struct {
-		outUS int64
-		speed float64
-	}
-	err = ffmpeg.Run(ctx, ffmpeg.Build(spec), func(p ffmpeg.Progress) {
-		if p.OutTimeUS > 0 {
-			prog.outUS = p.OutTimeUS
-		}
-		if p.Speed > 0 {
-			prog.speed = p.Speed
-		}
-		if time.Since(lastEmit) < 2*time.Second {
-			return
-		}
-		lastEmit = time.Now()
-		fraction := 0.0
-		if probe.DurationS > 0 && prog.outUS > 0 {
-			fraction = float64(prog.outUS) / 1e6 / probe.DurationS
-			if fraction > 1 {
-				fraction = 1
-			}
-		}
-		logf(Event{
-			FileID: t.ID, Path: t.Path, Stage: "encode",
-			Message:  fmt.Sprintf("%.0f%%", fraction*100),
-			Fraction: fraction, Speed: prog.speed,
-		})
-	})
-	if err != nil {
-		return res, abort(opts, t, "E_ENCODE_FFMPEG", err.Error())
-	}
-	if info, err := os.Stat(out); err != nil || info.Size() == 0 {
-		return res, abort(opts, t, "E_ENCODE_NO_OUTPUT", "ffmpeg exited cleanly but wrote nothing")
-	}
-	res.BytesAfter = mustSize(out)
-
-	// Verify before anything is allowed to move.
-	_ = opts.Store.SetState(ctx, t.ID, "verifying")
 	band := RatioBand{Min: cfg.Safety.SizeRatioMin, Max: cfg.Safety.SizeRatioMax}
 	if t.Decision == "remux" {
 		// A remux should be roughly the same size; the encode bands would
 		// reject it for not shrinking.
 		band = RatioBand{Min: 0.80, Max: 1.15}
 	}
-	verdict, err := Verify(ctx, media.Probe{
-		DurationS: probe.DurationS,
-		SizeBytes: before,
-	}, out, VerifyRules{
-		Band:               band,
-		DurationToleranceS: float64(cfg.Safety.DurationTolSec),
-		SampleSeconds:      cfg.Safety.VerifySampleSec,
-	})
-	if err != nil {
-		return res, abort(opts, t, "E_VERIFY_DECODE", err.Error())
+
+	// One encode at the ladder rung, plus one escalation if the result misses
+	// the quality floor. Grain-heavy film is the usual cause; spending another
+	// 40 % of bits beats parking a file that is otherwise fine.
+	targets := []int{t.TargetKbps}
+	if t.Decision == "encode" && t.TargetKbps > 0 {
+		targets = append(targets, t.TargetKbps*14/10)
+	}
+
+	var verdict Verdict
+	for attempt, kbps := range targets {
+		spec.TargetKbps = kbps
+		_ = os.Remove(out)
+
+		if attempt > 0 {
+			emit("retry", "E_VERIFY_VMAF", fmt.Sprintf("below the quality floor at %d kbps; retrying at %d kbps", targets[0], kbps))
+		}
+		_ = opts.Store.SetState(ctx, t.ID, "encoding")
+		emit("encode", "", fmt.Sprintf("%s → %d kbps", t.Decision, kbps))
+
+		var lastEmit time.Time
+		// ffmpeg emits progress fields on separate lines, so each callback
+		// carries only one of them. Accumulate or the percentage stays at zero.
+		var prog struct {
+			outUS int64
+			speed float64
+		}
+		err = ffmpeg.Run(ctx, ffmpeg.Build(spec), func(p ffmpeg.Progress) {
+			if p.OutTimeUS > 0 {
+				prog.outUS = p.OutTimeUS
+			}
+			if p.Speed > 0 {
+				prog.speed = p.Speed
+			}
+			if time.Since(lastEmit) < 2*time.Second {
+				return
+			}
+			lastEmit = time.Now()
+			fraction := 0.0
+			if probe.DurationS > 0 && prog.outUS > 0 {
+				fraction = float64(prog.outUS) / 1e6 / probe.DurationS
+				if fraction > 1 {
+					fraction = 1
+				}
+			}
+			logf(Event{
+				FileID: t.ID, Path: t.Path, Stage: "encode",
+				Message:  fmt.Sprintf("%.0f%%", fraction*100),
+				Fraction: fraction, Speed: prog.speed,
+			})
+		})
+		if err != nil {
+			return res, abort(opts, t, "E_ENCODE_FFMPEG", err.Error())
+		}
+		if info, err := os.Stat(out); err != nil || info.Size() == 0 {
+			return res, abort(opts, t, "E_ENCODE_NO_OUTPUT", "ffmpeg exited cleanly but wrote nothing")
+		}
+		res.BytesAfter = mustSize(out)
+
+		// Verify before anything is allowed to move.
+		_ = opts.Store.SetState(ctx, t.ID, "verifying")
+		verdict, err = Verify(ctx, media.Probe{
+			DurationS: probe.DurationS,
+			SizeBytes: before,
+		}, out, VerifyRules{
+			Band:               band,
+			DurationToleranceS: float64(cfg.Safety.DurationTolSec),
+			SampleSeconds:      cfg.Safety.VerifySampleSec,
+			VerifyVMAF:         cfg.Safety.VerifyVMAF && t.Decision == "encode",
+			ExpectedVMAF:       planner.ExpectedVMAF(cfg, probe.VideoCodec, probe.Height),
+			VMAFTolerance:      cfg.Quality.VMAFTolerance,
+			RefPath:            t.Path,
+		})
+		if err != nil {
+			return res, abort(opts, t, "E_VERIFY_DECODE", err.Error())
+		}
+		if verdict.OK {
+			break
+		}
+		// Only a quality miss is worth another encode. Anything else is a real
+		// failure and retrying it unchanged would just burn the same time again.
+		if verdict.Code != "E_VERIFY_VMAF" || attempt == len(targets)-1 {
+			res.Verdict = verdict
+			return res, abort(opts, t, verdict.Code, verdict.Detail)
+		}
 	}
 	res.Verdict = verdict
 	if !verdict.OK {
@@ -234,7 +264,7 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 			fmt.Sprintf("%v (the original is safe at %s)", err, q))
 	}
 
-	if err := opts.Store.Finish(ctx, t.ID, before, res.BytesAfter, 0); err != nil {
+	if err := opts.Store.Finish(ctx, t.ID, before, res.BytesAfter, verdict.VMAF); err != nil {
 		return res, err
 	}
 	res.Seconds = int64(time.Since(started).Seconds())

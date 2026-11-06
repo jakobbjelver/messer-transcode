@@ -769,6 +769,22 @@ the quality target is the only dial.
     and a four-window decode.
   Next milestone: M3 (server API and UI).
 
+- **rev 4** (2026-11-06): **M6 complete — the ladder is now measured, not assumed.**
+  `calibrate` ran 60 measurements over 6 files and produced two curves (`docs/calibration.md`):
+  HEVC 1080p hits VMAF 95.0 exactly at 6,000 kbps, confirming the plan's number; H.264 sources
+  **never reach 95** — 8,500 kbps buys only 94.1, because grain cannot be re-encoded at any
+  bitrate. So a single global target was wrong: ladder rows now carry `expected_vmaf`, and
+  verification holds each file to its own tier's measured expectation.
+  Two consequences worth remembering:
+  * The projection drops from 780 GB to **671 GB** with the calibrated table, because the H.264
+    target rose from 5,500 to 6,000 and 74 more files fall under the 10 % saving floor.
+  * A real Bluray HEVC episode scored **90.8** against a 95 expectation at 6,000 kbps — the
+    single-window check was too strict and the content was harder than the sample. Verification
+    now averages two windows, and a quality miss triggers **one re-encode at 1.4× the target**
+    before the file is failed. That escalation is the answer to the per-file variance the
+    calibration exposed; `quality.mode = "probe"` remains unimplemented and is now unnecessary.
+  Next milestone: M3 (server API and UI) — M6 was pulled forward because it decides every file.
+
 ### How to resume after a context reset
 
 1. Read this file top to bottom — §1 carries the measured facts, §2 the binding decisions.

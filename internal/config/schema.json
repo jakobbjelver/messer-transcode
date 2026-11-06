@@ -79,7 +79,8 @@
             "properties": {
               "codec": { "enum": ["h264", "hevc"] },
               "height_gte": { "type": "integer", "minimum": 0, "maximum": 4320 },
-              "kbps": { "type": "integer", "minimum": 100, "maximum": 120000 }
+              "kbps": { "type": "integer", "minimum": 100, "maximum": 120000 },
+              "expected_vmaf": { "type": "number", "minimum": 50, "maximum": 100 }
             }
           }
         },

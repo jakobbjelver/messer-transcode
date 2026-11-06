@@ -24,13 +24,14 @@
     "vmaf_target": 95.0,
     "vmaf_tolerance": 1.0,
     "table": [
-      { "codec": "h264", "height_gte": 2000, "kbps": 14000 },
-      { "codec": "h264", "height_gte": 1000, "kbps": 5500 },
-      { "codec": "h264", "height_gte": 700, "kbps": 2200 },
-      { "codec": "h264", "height_gte": 0, "kbps": 900 },
-      { "codec": "hevc", "height_gte": 2000, "kbps": 16000 },
-      { "codec": "hevc", "height_gte": 1000, "kbps": 6000 },
-      { "codec": "hevc", "height_gte": 700, "kbps": 2400 }
+      { "codec": "h264", "height_gte": 2000, "kbps": 15600, "expected_vmaf": 92.9 },
+      { "codec": "h264", "height_gte": 1000, "kbps": 6000, "expected_vmaf": 92.9 },
+      { "codec": "h264", "height_gte": 700, "kbps": 2700, "expected_vmaf": 92.9 },
+      { "codec": "h264", "height_gte": 0, "kbps": 960, "expected_vmaf": 92.9 },
+      { "codec": "hevc", "height_gte": 2000, "kbps": 15600, "expected_vmaf": 95.0 },
+      { "codec": "hevc", "height_gte": 1000, "kbps": 6000, "expected_vmaf": 95.0 },
+      { "codec": "hevc", "height_gte": 700, "kbps": 2700, "expected_vmaf": 95.0 },
+      { "codec": "hevc", "height_gte": 0, "kbps": 960, "expected_vmaf": 95.0 }
     ],
     "probe_outliers_above_kbps": 12000,
     "min_saving_pct": 10

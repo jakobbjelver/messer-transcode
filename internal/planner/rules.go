@@ -128,6 +128,21 @@ func TargetKbps(cfg *config.Config, codec string, height int) (int, bool) {
 	return 0, false
 }
 
+// ExpectedVMAF is the quality a ladder rung promises, from calibration.
+// Zero means the rung was never measured, and verification will not pretend
+// otherwise — an unmeasured rung gets no quality assertion.
+func ExpectedVMAF(cfg *config.Config, codec string, height int) float64 {
+	for _, row := range cfg.Quality.Table {
+		if row.Codec == codec && height >= row.HeightGTE {
+			if row.ExpectedVMAF != nil {
+				return *row.ExpectedVMAF
+			}
+			return 0
+		}
+	}
+	return 0
+}
+
 func encodeReason(f media.Facts, target int) string {
 	return fmt.Sprintf("%s at %d kbps → HEVC %d kbps (−%d%%)",
 		codecName(f.Codec), f.BitrateKbps, target, saving(f.BitrateKbps, target))

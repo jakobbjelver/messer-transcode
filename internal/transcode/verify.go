@@ -27,6 +27,7 @@ type Verdict struct {
 	OK     bool        `json:"ok"`
 	Code   string      `json:"code,omitempty"`
 	Detail string      `json:"detail,omitempty"`
+	VMAF   float64     `json:"vmaf,omitempty"`
 	Probe  media.Probe `json:"-"`
 	Checks []Check     `json:"checks"`
 }
@@ -41,6 +42,13 @@ type VerifyRules struct {
 	Band               RatioBand
 	DurationToleranceS float64
 	SampleSeconds      int
+	// VerifyVMAF turns on the quality check. It only runs when RefPath is set
+	// and ExpectedVMAF is above zero — a rung with no measurement behind it
+	// cannot be held to a number.
+	VerifyVMAF    bool
+	ExpectedVMAF  float64
+	VMAFTolerance float64
+	RefPath       string
 }
 
 // Verify checks an encoded file before it is allowed to replace anything:
@@ -89,6 +97,58 @@ func Verify(ctx context.Context, src media.Probe, out string, rules VerifyRules)
 		Code:   "E_VERIFY_DECODE",
 		Detail: errorText(decodeErr),
 	})
+
+	// 4. Quality, when there is a measured expectation to hold it to.
+	// Two windows, averaged: a single 60-second sample varies by several points
+	// on grain-heavy content, and holding it to a mean measured over many
+	// windows would fail films that are perfectly fine.
+	if rules.VerifyVMAF && rules.RefPath != "" && rules.ExpectedVMAF > 0 {
+		window := float64(rules.SampleSeconds)
+		var scores []float64
+		var worstMin float64 = 101
+		var measureErr error
+		for _, frac := range []float64{0.40, 0.70} {
+			start := got.DurationS * frac
+			if start+window > got.DurationS {
+				start = got.DurationS - window
+			}
+			if start < 0 {
+				start = 0
+			}
+			score, err := ffmpeg.VMAFWindow(ctx, rules.RefPath, start, out, start, window)
+			if err != nil {
+				measureErr = err
+				break
+			}
+			scores = append(scores, score.Mean)
+			if score.Min < worstMin {
+				worstMin = score.Min
+			}
+		}
+		switch {
+		case measureErr != nil:
+			v.Checks = append(v.Checks, Check{
+				Name: "vmaf", OK: true, // a measurement failure is not a quality failure
+				Code:   "E_VERIFY_VMAF",
+				Detail: "not measured: " + measureErr.Error(),
+			})
+		case len(scores) > 0:
+			mean := 0.0
+			for _, s := range scores {
+				mean += s
+			}
+			mean /= float64(len(scores))
+			v.VMAF = mean
+			floor := rules.ExpectedVMAF - rules.VMAFTolerance
+			ok := mean >= floor
+			v.Checks = append(v.Checks, Check{
+				Name: "vmaf", OK: ok,
+				Code: "E_VERIFY_VMAF",
+				Detail: fmt.Sprintf("%.1f over %d windows (expected %.1f, floor %.1f, worst frame %.1f)",
+					mean, len(scores), rules.ExpectedVMAF, floor, worstMin),
+			})
+		}
+	}
 
 	for _, c := range v.Checks {
 		if !c.OK {

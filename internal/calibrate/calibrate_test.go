@@ -60,8 +60,16 @@ func TestBuildCurveReportsFailureRatherThanGuessing(t *testing.T) {
 	if c.Met {
 		t.Fatal("no rung reached the target; Met must be false")
 	}
-	if c.Chosen != 0 {
-		t.Errorf("chosen = %d, want 0 when nothing met the target", c.Chosen)
+	// It still reports the best measured rung and the ceiling, so a caller can
+	// see how far short the encoder fell instead of being handed a zero.
+	if c.Chosen != 5000 {
+		t.Errorf("chosen = %d, want the top measured rung (5000)", c.Chosen)
+	}
+	if c.ChosenVMAF != 85 {
+		t.Errorf("chosen vmaf = %v, want 85", c.ChosenVMAF)
+	}
+	if c.Ceiling != 85 {
+		t.Errorf("ceiling = %v, want 85", c.Ceiling)
 	}
 }
 

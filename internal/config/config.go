@@ -96,6 +96,11 @@ type QualityRow struct {
 	Codec     string `json:"codec"`
 	HeightGTE int    `json:"height_gte"`
 	Kbps      int    `json:"kbps"`
+	// ExpectedVMAF is what calibration measured this rung to deliver on this
+	// library. Verification compares against it when set, because a single
+	// global target is unreachable for some content (grain never survives a
+	// re-encode, at any bitrate).
+	ExpectedVMAF *float64 `json:"expected_vmaf,omitempty"`
 }
 
 // Audio controls track retention and lossless-to-lossy conversion.

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -60,11 +61,13 @@ type Point struct {
 
 // Curve is the measured quality/bitrate relationship for one codec tier.
 type Curve struct {
-	Codec  string `json:"codec"`
-	Height int    `json:"height"`
-	Rungs  []Rung `json:"rungs"`
-	Chosen int    `json:"chosen_kbps"`
-	Met    bool   `json:"target_met"`
+	Codec      string  `json:"codec"`
+	Height     int     `json:"height"`
+	Rungs      []Rung  `json:"rungs"`
+	Chosen     int     `json:"chosen_kbps"`
+	ChosenVMAF float64 `json:"chosen_vmaf"`
+	Met        bool    `json:"target_met"`
+	Ceiling    float64 `json:"ceiling_vmaf"`
 }
 
 // Rung is the aggregate for one bitrate across all windows of all samples.
@@ -78,10 +81,12 @@ type Rung struct {
 // SuggestRow is one proposed ladder entry. Extrapolated marks rungs that were
 // scaled from the calibrated 1080p figure rather than measured.
 type SuggestRow struct {
-	Codec        string `json:"codec"`
-	HeightGTE    int    `json:"height_gte"`
-	Kbps         int    `json:"kbps"`
-	Extrapolated bool   `json:"extrapolated,omitempty"`
+	Codec        string  `json:"codec"`
+	HeightGTE    int     `json:"height_gte"`
+	Kbps         int     `json:"kbps"`
+	ExpectedVMAF float64 `json:"expected_vmaf,omitempty"`
+	BelowTarget  bool    `json:"below_target,omitempty"`
+	Extrapolated bool    `json:"extrapolated,omitempty"`
 }
 
 // Result is the whole run.
@@ -161,23 +166,20 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		}
 		curve := buildCurve(codec, 1080, points, opts.Target)
 		res.Curves = append(res.Curves, curve)
-		if curve.Met {
-			res.Suggested = append(res.Suggested, SuggestRow{
-				Codec: codec, HeightGTE: 1000, Kbps: curve.Chosen,
-			})
-		}
+		res.Suggested = append(res.Suggested, SuggestRow{
+			Codec: codec, HeightGTE: 1000, Kbps: curve.Chosen,
+			ExpectedVMAF: round1(curve.ChosenVMAF),
+			BelowTarget:  !curve.Met,
+		})
 	}
 	// Higher and lower rungs are scaled from the calibrated 1080p figure: 4K
 	// needs roughly 2.6x, 720p about 0.45x. These are extrapolations and are
 	// labelled as such in the output.
 	for _, c := range res.Curves {
-		if !c.Met {
-			continue
-		}
 		res.Suggested = append(res.Suggested,
-			SuggestRow{Codec: c.Codec, HeightGTE: 2000, Kbps: c.Chosen * 26 / 10, Extrapolated: true},
-			SuggestRow{Codec: c.Codec, HeightGTE: 700, Kbps: c.Chosen * 45 / 100, Extrapolated: true},
-			SuggestRow{Codec: c.Codec, HeightGTE: 0, Kbps: c.Chosen * 16 / 100, Extrapolated: true},
+			SuggestRow{Codec: c.Codec, HeightGTE: 2000, Kbps: c.Chosen * 26 / 10, ExpectedVMAF: round1(c.ChosenVMAF), BelowTarget: !c.Met, Extrapolated: true},
+			SuggestRow{Codec: c.Codec, HeightGTE: 700, Kbps: c.Chosen * 45 / 100, ExpectedVMAF: round1(c.ChosenVMAF), BelowTarget: !c.Met, Extrapolated: true},
+			SuggestRow{Codec: c.Codec, HeightGTE: 0, Kbps: c.Chosen * 16 / 100, ExpectedVMAF: round1(c.ChosenVMAF), BelowTarget: !c.Met, Extrapolated: true},
 		)
 	}
 	sortRows(res.Suggested)
@@ -236,8 +238,20 @@ func buildCurve(codec string, height int, points []Point, target float64) Curve 
 	for _, r := range rungs {
 		if r.VMAF >= target {
 			curve.Chosen = r.Kbps
+			curve.ChosenVMAF = r.VMAF
 			curve.Met = true
 			break
+		}
+	}
+	if len(rungs) > 0 {
+		curve.Ceiling = rungs[len(rungs)-1].VMAF
+		if !curve.Met {
+			// Nothing reached the target: report the best measured rung and say
+			// so. A ceiling below target is a property of the content, not a
+			// reason to invent a bitrate that was never tested.
+			top := rungs[len(rungs)-1]
+			curve.Chosen = top.Kbps
+			curve.ChosenVMAF = top.VMAF
 		}
 	}
 	return curve
@@ -292,6 +306,9 @@ ORDER BY video_codec, path`)
 	}
 	return out, nil
 }
+
+// round1 keeps a measured score at the precision it was measured to.
+func round1(v float64) float64 { return math.Round(v*10) / 10 }
 
 func sortRows(rows []SuggestRow) {
 	sort.SliceStable(rows, func(i, j int) bool {

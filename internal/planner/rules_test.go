@@ -148,7 +148,7 @@ func TestTargetKbps(t *testing.T) {
 		{"h264", 480, 900, true},
 		{"hevc", 2160, 16000, true},
 		{"hevc", 1080, 6000, true},
-		{"hevc", 400, 0, false},
+		{"hevc", 400, 960, true},
 		{"av1", 1080, 0, false},
 	} {
 		got, ok := TargetKbps(cfg, tc.codec, tc.height)
@@ -164,7 +164,7 @@ func TestReasonMentionsBothNumbers(t *testing.T) {
 	if v.Reason == "" {
 		t.Fatal("empty reason")
 	}
-	for _, want := range []string{"H.264", "7796", "5500"} {
+	for _, want := range []string{"H.264", "7796", "6000"} {
 		if !strings.Contains(v.Reason, want) {
 			t.Errorf("reason %q should mention %q", v.Reason, want)
 		}
