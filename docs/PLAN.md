@@ -816,6 +816,26 @@ the quality target is the only dial.
     that. This is the number the UI shows, so it had to be true rather than convenient.
   Next: M5 (pre-stage lanes, disk floors, metrics), then M7 (doctor/health), M8 (kill Tdarr), M9 (public).
 
+- **rev 7** (2026-11-06): **M5 complete — the encoder no longer waits for I/O.** `transcode.Split` stops
+  after verification and hands the swap back as a function; `Commit` runs it. The node prefetches the
+  next file (claim, stage, keep the lease alive) while this one encodes, and places the finished one
+  (`docs/lanes.md`).
+  **Gate:** four 35-minute episodes, **16 m 54 s working window, 16 m 57 s encoding, 0.2 % idle**;
+  a second two-file run agreed (8 m 34 s / 8 m 33 s / 0.2 %). The gate asked for two hours — this was
+  seventeen minutes of real work, so treat it as a strong signal rather than a signed-off 2-hour soak.
+  Three things the measurement taught:
+  * **The first idle numbers were wrong twice (5.7 %, then 10.3 %).** The clock ran to shutdown instead
+    of to the last placement, so waiting for the queue looked like idle. Fixing the metric took the
+    honest figure to 0.2 % — the work was already fine, the instrument was not.
+  * **Verification was the real remaining gap:** two VMAF windows run sequentially cost eleven seconds
+    per file. Running them together is most of why the number is now under one percent.
+  * **A claim with no id reached the pipeline at shutdown** and failed with "library not configured".
+    Both ends now refuse it: `Claim` treats a 200 without a job as no work, and `runOne` ignores an
+    identity-less task instead of encoding something it cannot report.
+  Deviations from the plan, both deliberate: placement is not batched (a queue of one is what actually
+  happens at this throughput), and ingest hashes the head and tail megabyte rather than whole files
+  (hashing 40 GB costs more than the copy it is meant to justify).
+
 ### How to resume after a context reset
 
 1. Read this file top to bottom — §1 carries the measured facts, §2 the binding decisions.

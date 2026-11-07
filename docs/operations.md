@@ -10,6 +10,16 @@ Two processes, one queue.
 Start the server, then the node. The node pulls work; nothing connects inward to
 the host.
 
+## The lanes
+
+Ingest and placement never block the encoder: the next file is staged while this
+one encodes, and the finished one is placed while the next one encodes. The
+details, the measurements and the two metrics that lied are in `docs/lanes.md`.
+
+Watch `events` with code `METRICS` if idle time ever reappears: each job records
+`{"encode_s":…,"egress_s":…,"wait_s":…}`, and `wait_s` is the gap that should
+never be more than a few milliseconds.
+
 ## The window
 
 `schedule.weekday` / `schedule.weekend` are `HH:MM-HH:MM` in
