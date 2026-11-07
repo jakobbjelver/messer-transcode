@@ -183,13 +183,13 @@ GROUP BY 1`, from, to)
 		var code string
 		var c int
 		if err := rows.Scan(&code, &c); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return r, err
 		}
 		r.FailedCodes[code] = c
 		r.Failed += c
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	r.SkippedCodes = map[string]int{}
 	rows, err = db.QueryContext(ctx, `
@@ -204,7 +204,7 @@ GROUP BY 1`, from, to)
 		var code string
 		var c int
 		if err := rows.Scan(&code, &c); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return r, err
 		}
 		r.SkippedCodes[code] = c

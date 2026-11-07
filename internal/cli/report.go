@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"path/filepath"
 	"time"
@@ -83,9 +82,5 @@ func cmdReport(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	}
 	say(stdout, "\n  %d runs · %d done · %d failed · %.2f GB reclaimed\n",
 		len(runs), totalDone, totalFailed, float64(totalReclaimed)/1e9)
-
-	if totalDone == 0 && totalFailed == 0 {
-		fmt.Fprintf(stderr, "%s", "")
-	}
 	return ExitOK
 }
