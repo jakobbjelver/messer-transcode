@@ -23,8 +23,8 @@ func testConfig() *config.Config {
 		Version:   1,
 		Libraries: []config.Library{{Name: "movies", Root: "/media", Extensions: []string{".mkv"}}},
 		Schedule: config.Schedule{
-			Weekday: "00:30-05:30", Weekend: "00:30-07:30",
-			DrainBeforeMinutes: 15, Timezone: "UTC",
+			Weekday: "00:00-23:59", Weekend: "00:00-23:59",
+			DrainBeforeMinutes: 0, Timezone: "UTC",
 		},
 		Workers: config.Workers{Encode: 1, Probe: 2, IngestBuffer: 2},
 		Paths:   config.Paths{Scratch: "/tmp/scratch", Quarantine: "/tmp/q"},
@@ -249,12 +249,21 @@ func TestNodeHeartbeatAndResult(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, path+"/result",
+	req = httptest.NewRequest(http.MethodPost, path+"/state",
 		strings.NewReader(`{"state":"skipped","code":"R_QUALITY_FLOOR","detail":"grain"}`))
 	req.Header.Set("X-Node-Token", testToken)
 	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("result status %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("state status %d: %s", rec.Code, rec.Body.String())
+	}
+	var applied struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &applied); err != nil {
+		t.Fatal(err)
+	}
+	if applied.State != "skipped" {
+		t.Errorf("applied state %q, want skipped", applied.State)
 	}
 
 	f, err := s.st.File(context.Background(), id)

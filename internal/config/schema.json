@@ -177,7 +177,8 @@
       "additionalProperties": false,
       "properties": {
         "listen": { "type": "string", "pattern": "^:[0-9]{2,5}$" },
-        "token": { "type": "string", "minLength": 16 }
+        "token": { "type": "string", "minLength": 16 },
+        "url": { "type": "string", "pattern": "^https?://" }
       }
     }
   },

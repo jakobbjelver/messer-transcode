@@ -157,21 +157,40 @@ func (s *Server) nodeClaim(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
+	if ok, reason := s.claimsAllowed(time.Now()); !ok {
+		w.Header().Set("X-Claim-Status", reason)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Give back anything whose node stopped reporting. This is the only place
+	// it matters, so it costs nothing when nobody is asking.
+	if n, err := s.st.ReapExpired(r.Context(), leaseDuration); err == nil && n > 0 {
+		s.log.Warn("requeued abandoned jobs", "count", n)
+	}
+
 	work, err := s.st.ClaimWork(r.Context(), 1)
 	if err != nil {
 		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
 		return
 	}
+	w.Header().Set("X-Claim-Status", RefusedEmpty)
 	if len(work) == 0 {
 		w.WriteHeader(http.StatusNoContent) // nothing to do, try again later
 		return
 	}
+	w.Header().Set("X-Claim-Status", "claimed")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"job":           work[0],
-		"lease_seconds": 300,
+		"lease_seconds": int(leaseDuration.Seconds()),
 		"node":          req.Node,
 	})
 }
+
+// leaseDuration is how long a claim survives without a heartbeat. Longer than
+// any single progress gap (two seconds) by two orders of magnitude, shorter
+// than a night.
+const leaseDuration = 5 * time.Minute
 
 func (s *Server) nodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -194,38 +213,82 @@ func (s *Server) nodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) nodeResult(w http.ResponseWriter, r *http.Request) {
+// nodeState is one endpoint for every transition a job makes. Separate verbs
+// for encoding, verifying and done would be three ways to be wrong; the state
+// name is the message.
+func (s *Server) nodeState(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		s.fail(w, http.StatusBadRequest, "E_BAD_ID", "not a file id")
 		return
 	}
 	var req struct {
-		State  string `json:"state"`
-		Code   string `json:"code"`
-		Detail string `json:"detail"`
+		State       string  `json:"state"`
+		Code        string  `json:"code"`
+		Detail      string  `json:"detail"`
+		BytesBefore int64   `json:"bytes_before"`
+		BytesAfter  int64   `json:"bytes_after"`
+		VMAF        float64 `json:"vmaf"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.fail(w, http.StatusBadRequest, "E_BAD_BODY", err.Error())
 		return
 	}
+
 	ctx := r.Context()
+	applied := req.State
 	switch req.State {
+	case "planned", "encoding", "verifying", "replacing":
+		err = s.st.SetState(ctx, id, req.State)
 	case "done":
-		err = s.st.SetState(ctx, id, "done")
+		err = s.st.Finish(ctx, id, req.BytesBefore, req.BytesAfter, req.VMAF)
 	case "skipped":
 		err = s.st.Skip(ctx, id, req.Code, req.Detail)
 	case "failed":
-		_, err = s.st.Fail(ctx, id, req.Code, req.Detail, 3)
+		// The store decides whether this was the last attempt.
+		applied, err = s.st.Fail(ctx, id, req.Code, req.Detail, s.maxAttempts())
 	default:
-		s.fail(w, http.StatusBadRequest, "E_BAD_STATE", "state must be done, skipped or failed")
+		s.fail(w, http.StatusBadRequest, "E_BAD_STATE",
+			"state must be planned, encoding, verifying, replacing, done, skipped or failed")
 		return
 	}
 	if err != nil {
 		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
 		return
 	}
+	// The node needs to know whether the file will be retried or is parked.
+	writeJSON(w, http.StatusOK, map[string]string{"state": applied})
+}
+
+func (s *Server) nodeEvent(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		FileID  int64  `json:"file_id"`
+		Level   string `json:"level"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Data    string `json:"data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.fail(w, http.StatusBadRequest, "E_BAD_BODY", err.Error())
+		return
+	}
+	if req.Level == "" {
+		req.Level = "info"
+	}
+	if err := s.st.Event(r.Context(), req.Level, req.Code, req.FileID, req.Message, req.Data); err != nil {
+		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// maxAttempts is how many times a file may fail before it is parked rather
+// than requeued.
+func (s *Server) maxAttempts() int {
+	if s.cfg.Safety.MaxAttempts > 0 {
+		return s.cfg.Safety.MaxAttempts
+	}
+	return 3
 }
 
 // ── small helpers ─────────────────────────────────────────────────────────

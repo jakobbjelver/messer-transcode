@@ -88,7 +88,7 @@ func cmdRun(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 			say(stdout, "\n%s\n", filepath.Base(w.Path))
 		}
 		res, err := transcode.Process(ctx, transcode.Options{
-			Config: cfg, Store: st, Log: logEvent, DryRun: *dryRun,
+			Config: cfg, Reporter: st, Log: logEvent, DryRun: *dryRun,
 		}, transcode.Task{
 			ID: w.ID, Path: w.Path, LibraryRoot: root,
 			Decision: w.Decision, TargetKbps: w.TargetKbps,

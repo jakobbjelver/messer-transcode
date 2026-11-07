@@ -171,6 +171,9 @@ type Notify struct {
 type Server struct {
 	Listen string `json:"listen"`
 	Token  string `json:"token"`
+	// URL is where the node finds the orchestrator. The server ignores it; it
+	// exists so both roles read one config file instead of two.
+	URL string `json:"url,omitempty"`
 }
 
 // Schema returns the embedded JSON Schema.

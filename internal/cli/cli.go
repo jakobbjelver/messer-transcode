@@ -30,6 +30,7 @@ commands:
   plan                    scan, probe and decide — writes nothing to media
   run                     encode, verify and replace
   serve                   run the orchestrator API and dashboard
+  node                    claim and process work from an orchestrator
   calibrate               measure the VMAF/bitrate curve of this library
   schema                  print the JSON Schema for config.json
   help                    this text
@@ -85,6 +86,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return cmdRun(stdout, stderr, rest[1:], jsonOut)
 	case "serve":
 		return cmdServe(stdout, stderr, rest[1:], jsonOut)
+	case "node":
+		return cmdNode(stdout, stderr, rest[1:], jsonOut)
 	case "calibrate":
 		return cmdCalibrate(stdout, stderr, rest[1:], jsonOut)
 	default:

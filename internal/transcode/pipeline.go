@@ -13,7 +13,6 @@ import (
 	"github.com/jakobbjelver/messer-transcode/internal/ffmpeg"
 	"github.com/jakobbjelver/messer-transcode/internal/media"
 	"github.com/jakobbjelver/messer-transcode/internal/planner"
-	"github.com/jakobbjelver/messer-transcode/internal/store"
 )
 
 // Task is one file to process.
@@ -25,12 +24,24 @@ type Task struct {
 	TargetKbps  int
 }
 
+// Reporter is where a job's progress and outcome go. The CLI writes to the
+// local database; the node writes to the orchestrator over HTTP. The pipeline
+// does not care which — it only knows that something is listening.
+type Reporter interface {
+	SetState(ctx context.Context, id int64, state string) error
+	SetProgress(ctx context.Context, id int64, fraction, speed float64) error
+	Event(ctx context.Context, level, code string, fileID int64, message, data string) error
+	Skip(ctx context.Context, id int64, code, reason string) error
+	Finish(ctx context.Context, id int64, before, after int64, vmaf float64) error
+	Fail(ctx context.Context, id int64, code, detail string, maxAttempts int) (state string, err error)
+}
+
 // Options configure a run.
 type Options struct {
-	Config *config.Config
-	Store  *store.Store
-	Log    func(Event)
-	DryRun bool // do everything except the final swap
+	Config   *config.Config
+	Reporter Reporter
+	Log      func(Event)
+	DryRun   bool // do everything except the final swap
 }
 
 // Event is progress worth showing a human or an agent.
@@ -162,16 +173,28 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 		if attempt > 0 {
 			emit("retry", "E_VERIFY_VMAF", fmt.Sprintf("below the quality floor at %d kbps; retrying at %d kbps", targets[0], kbps))
 		}
-		_ = opts.Store.SetState(ctx, t.ID, "encoding")
+		_ = opts.Reporter.SetState(ctx, t.ID, "encoding")
 		emit("encode", "", fmt.Sprintf("%s → %d kbps", t.Decision, kbps))
 
 		var lastEmit time.Time
+		encodeStarted := time.Now()
 		// ffmpeg emits progress fields on separate lines, so each callback
 		// carries only one of them. Accumulate or the percentage stays at zero.
 		var prog struct {
 			outUS int64
 			speed float64
 		}
+
+		// The projected size is what a finished file should weigh at this rung.
+		// Bytes on disk against it is the only progress measure that survives
+		// files where out_time lags: a 35-minute episode with 40 subtitle
+		// streams reports 3% while the output is two thirds written, and its
+		// own speed field reads N/A throughout.
+		expectedBytes := 0.0
+		if t.Decision == "encode" && t.TargetKbps > 0 && probe.DurationS > 0 {
+			expectedBytes = float64(t.TargetKbps) * 1000 / 8 * probe.DurationS
+		}
+
 		encodeTail, runErr := ffmpeg.RunTail(ctx, ffmpeg.Build(spec), func(p ffmpeg.Progress) {
 			if p.OutTimeUS > 0 {
 				prog.outUS = p.OutTimeUS
@@ -183,21 +206,39 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 				return
 			}
 			lastEmit = time.Now()
+
 			fraction := 0.0
 			if probe.DurationS > 0 && prog.outUS > 0 {
 				fraction = float64(prog.outUS) / 1e6 / probe.DurationS
-				if fraction > 1 {
-					fraction = 1
+			}
+			if expectedBytes > 0 {
+				if fi, statErr := os.Stat(out); statErr == nil {
+					if bySize := float64(fi.Size()) / expectedBytes; bySize > fraction {
+						fraction = bySize
+					}
 				}
 			}
+			if fraction > 0.99 {
+				fraction = 0.99 // never claim finished; verification has not run
+			}
+
+			// Report our own speed when ffmpeg's is missing or wrong: seconds of
+			// film written per second of wall clock.
+			speed := prog.speed
+			if elapsed := time.Since(encodeStarted).Seconds(); elapsed > 0 && fraction > 0 {
+				if measured := fraction * probe.DurationS / elapsed; measured > speed {
+					speed = measured
+				}
+			}
+
 			logf(Event{
 				FileID: t.ID, Path: t.Path, Stage: "encode",
 				Message:  fmt.Sprintf("%.0f%%", fraction*100),
-				Fraction: fraction, Speed: prog.speed,
+				Fraction: fraction, Speed: speed,
 			})
 			// Also land it on the row, so the dashboard can read progress from
 			// another process: the server never sees this callback.
-			_ = opts.Store.SetProgress(ctx, t.ID, fraction, prog.speed)
+			_ = opts.Reporter.SetProgress(ctx, t.ID, fraction, speed)
 		})
 		if runErr != nil {
 			return res, abort(opts, t, "E_ENCODE_FFMPEG", runErr.Error())
@@ -210,10 +251,10 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 			return res, abort(opts, t, "E_ENCODE_NO_OUTPUT", detail)
 		}
 		res.BytesAfter = mustSize(out)
-		_ = opts.Store.SetProgress(ctx, t.ID, 1, prog.speed)
+		_ = opts.Reporter.SetProgress(ctx, t.ID, 1, prog.speed)
 
 		// Verify before anything is allowed to move.
-		_ = opts.Store.SetState(ctx, t.ID, "verifying")
+		_ = opts.Reporter.SetState(ctx, t.ID, "verifying")
 		verdict, err = Verify(ctx, media.Probe{
 			DurationS: probe.DurationS,
 			SizeBytes: before,
@@ -246,8 +287,8 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 			reason := fmt.Sprintf("best attempt scored %s at %d kbps: not worth re-encoding",
 				verdictDetail(verdict), kbps)
 			emit("skip", "R_QUALITY_FLOOR", reason)
-			_ = opts.Store.Event(ctx, "info", "R_QUALITY_FLOOR", t.ID, reason, "")
-			return res, opts.Store.Skip(ctx, t.ID, "R_QUALITY_FLOOR", reason)
+			_ = opts.Reporter.Event(ctx, "info", "R_QUALITY_FLOOR", t.ID, reason, "")
+			return res, opts.Reporter.Skip(ctx, t.ID, "R_QUALITY_FLOOR", reason)
 		}
 	}
 	res.Verdict = verdict
@@ -258,13 +299,13 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	if opts.DryRun {
 		emit("dry-run", "", fmt.Sprintf("verified %s → %s, not replacing", humanSize(before), humanSize(res.BytesAfter)))
 		// Leave it claimable: a dry run must not consume the file.
-		_ = opts.Store.SetState(ctx, t.ID, "planned")
+		_ = opts.Reporter.SetState(ctx, t.ID, "planned")
 		res.Seconds = int64(time.Since(started).Seconds())
 		return res, nil
 	}
 
 	// Place: copy next to the destination, then swap atomically.
-	_ = opts.Store.SetState(ctx, t.ID, "replacing")
+	_ = opts.Reporter.SetState(ctx, t.ID, "replacing")
 	dir := filepath.Dir(t.Path)
 	tmp := filepath.Join(dir, fmt.Sprintf(".messer-%d.tmp", t.ID))
 	defer func() { _ = os.Remove(tmp) }()
@@ -284,7 +325,7 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 			fmt.Sprintf("%v (the original is safe at %s)", err, q))
 	}
 
-	if err := opts.Store.Finish(ctx, t.ID, before, res.BytesAfter, verdict.VMAF); err != nil {
+	if err := opts.Reporter.Finish(ctx, t.ID, before, res.BytesAfter, verdict.VMAF); err != nil {
 		return res, err
 	}
 	res.Seconds = int64(time.Since(started).Seconds())
@@ -300,11 +341,11 @@ func abort(opts Options, t Task, code, msg string) error {
 		max = opts.Config.Safety.MaxAttempts
 	}
 	state := "planned"
-	if opts.Store != nil {
-		if s, err := opts.Store.Fail(context.Background(), t.ID, code, msg, max); err == nil {
+	if opts.Reporter != nil {
+		if s, err := opts.Reporter.Fail(context.Background(), t.ID, code, msg, max); err == nil {
 			state = s
 		}
-		_ = opts.Store.Event(context.Background(), "error", code, t.ID, msg, "")
+		_ = opts.Reporter.Event(context.Background(), "error", code, t.ID, msg, "")
 	}
 	return fmt.Errorf("%s: %s (state %s)", code, msg, state)
 }

@@ -64,8 +64,9 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("POST /api/v1/node/register", s.nodeGuard(s.nodeRegister))
 	mux.HandleFunc("POST /api/v1/node/claim", s.nodeGuard(s.nodeClaim))
+	mux.HandleFunc("POST /api/v1/node/event", s.nodeGuard(s.nodeEvent))
 	mux.HandleFunc("POST /api/v1/node/jobs/{id}/heartbeat", s.nodeGuard(s.nodeHeartbeat))
-	mux.HandleFunc("POST /api/v1/node/jobs/{id}/result", s.nodeGuard(s.nodeResult))
+	mux.HandleFunc("POST /api/v1/node/jobs/{id}/state", s.nodeGuard(s.nodeState))
 
 	return s.recoverer(s.logger(mux))
 }
