@@ -857,6 +857,38 @@ the quality target is the only dial.
   Also shipped: `docs/history-tdarr.md` (what Tdarr was, the three reasons it went, what was kept),
   and the transcode section in the `system-health-check` skill with the code table.
 
+- **rev 9** (2026-11-07): **M8 complete — the cutover. Tdarr is gone.**
+  **Shadow run on the real library** (2 files, `--limit 2`): `10 Things I Hate About You` 7.70 GB →
+  **4.84 GB (−37 %), VMAF 95.0** (expected 92.9); a remux left at 6.66 GB as planned. **2.86 GB
+  reclaimed in 13m59s**, zero failures. Production plan confirmed at **669.67 GB** over 3,109 files —
+  the calibrated projection, not the pre-calibration 780 GB.
+  **Cutover:** `transcode` replaced `tdarr` in `compose.video.yaml` and `services.yaml`, deployed
+  through Komodo as a member of video-stack. Always-on orchestrator container, 27 MB image, mounts
+  only `configs/transcode`. The node runs under PM2 from `deploy/ecosystem.transcode.config.cjs`
+  with `kill_timeout` of ten minutes so a restart does not throw away an encode.
+  **Removal:** container, PM2 app, wrapper, ecosystem file, compose entry, local domain label, backup
+  exclusion. Config archived (381 MB, includes the Tdarr `database.db` that `docs/plan-diff.md` cites)
+  and 11 months of job reports archived (8.4 GB → ~950 MB). **53 GB of transcode cache deleted.**
+  Five things this deployment taught that no test had:
+  * **The token cannot live in the stack environment.** Komodo rewrites `.env` from its own stack
+    config on every deploy, and writing that array *replaces every other variable* — the documented
+    way to wipe a stack's secrets. It now lives in `server.token`, 0600, gitignored, read with
+    `--token-file`. The compose file carries no secrets at all.
+  * **An idle node was invisible.** Health read the events table, and the node only posted `METRICS`
+    when a job finished — so a node correctly waiting for the window looked exactly like a node that
+    died at midnight. `NODE_UP` and a five-minute `NODE_IDLE` fixed it. The check meant to tell
+    "waiting" from "dead" was reporting "dead" for both.
+  * **`--once` never returned outside the window**, backing off for hours. It now exits in 0.4 s
+    with `no work: window-shut`.
+  * **A stale host process on :8099** made the container's health look wrong for two rounds of
+    debugging: I was reading lanes.db through a server I had started an hour earlier. The container
+    was right the whole time.
+  * **Auto-generated startup scripts do not know about a new service.** `start-video.sh` is generated
+    from `services.yaml`; until it was regenerated, Komodo created the container and left it stopped.
+  **Gate is calendar time, not work:** seven consecutive nights with zero failures, the library
+  shrinking by roughly 95 GB/night, and `transcode-health.sh` green in the daily check. Tonight is
+  night one.
+
 ### How to resume after a context reset
 
 1. Read this file top to bottom — §1 carries the measured facts, §2 the binding decisions.

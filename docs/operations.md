@@ -64,6 +64,18 @@ pm2 restart transcode-node                        # after make build
 pm2 logs transcode-node --lines 40 --nostream
 ```
 
+**Where the state lives.** On a Docker volume (`/data`), not on the bind mount.
+SQLite over virtiofs does not work: through the bind mount, 40 of 40 event
+writes returned IO errors and `quick_check` reported corrupt pages, while the
+host read the same file without complaint. A named volume is a real filesystem
+and the errors disappear. Config stays read-only on the bind mount; only the
+queue is on the volume.
+
+The consequence to know: the host can no longer read the live queue. `doctor
+--role server` against a path is now a check of a copy, not the original — the
+authoritative answer for the server half is `GET /api/v1/health`, which is what
+`transcode-health.sh` reads.
+
 **The token.** The node authenticates with a token that must not sit in
 `config.json` (committed beside it) or in the stack environment (Komodo rewrites
 `.env` from its own stack config on every deploy, and writing that array
