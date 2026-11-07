@@ -117,6 +117,15 @@ anything, and it deletes only what it put there:
 Quarantine/2026-11-07/Movies/Some Film (1999)/Some Film.mkv
 ```
 
+It lives on the **fast volume, not beside the library**, and that is deliberate.
+A processed file leaves its original here, so if the quarantine sits on the
+library's own disk the volume *grows* by the size of every replacement and the
+floor stops the batch within nights. On a separate disk the original leaves the
+library entirely: the library shrinks from the first file, and the quarantine
+accumulates where there is headroom. The trade is that a failed fast disk costs
+the originals, not the films — with a short keep window that is the right way
+round.
+
 The node expires those directories once a day, at the first idle moment inside
 the window, and reports `QUARANTINE_SWEEP` when it actually removes something. It
 runs on the node because the orchestrator never mounts the media volume. A marker
