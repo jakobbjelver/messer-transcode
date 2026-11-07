@@ -13,7 +13,7 @@ module.exports = {
     {
       name: "transcode-node",
       script: "/Users/jakob/Repos/messer-transcode/bin/messer-transcode",
-      args: "node --config /Users/jakob/Server/configs/transcode/config.json",
+      args: "node --config /Users/jakob/Server/configs/transcode/config.json --token-file /Users/jakob/Server/configs/transcode/server.token --name mac-mini",
       interpreter: "none", // it is a binary, not a script
       cwd: "/Users/jakob/Repos/messer-transcode",
       autorestart: true,

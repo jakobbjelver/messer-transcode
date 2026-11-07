@@ -236,6 +236,10 @@ type Agent struct {
 	Prefetch bool
 	Egress   bool
 
+	// idleReported is when this node last told the orchestrator it was alive
+	// but had nothing to do.
+	idleReported time.Time
+
 	lastEncodeEnd time.Time
 	ready         chan *pending
 	prefetchOn    bool
@@ -330,6 +334,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	if err := a.handshake(ctx); err != nil {
 		return err
 	}
+	// Say hello as an event, not just as a log line. The orchestrator cannot
+	// see this process, so without this a healthy idle node looks exactly like
+	// a dead one — which is the failure this whole health check exists to
+	// distinguish.
+	_ = a.client.Event(ctx, "info", "NODE_UP", 0, "node started", "")
+	a.idleReported = time.Now()
 	a.recoverInterrupted(ctx)
 
 	if a.Egress {
@@ -356,6 +366,19 @@ func (a *Agent) Run(ctx context.Context) error {
 			refusals++
 			if refusals == 1 || refusals%20 == 0 {
 				a.log(transcode.Event{Stage: "idle", Message: "no work: " + reason})
+			}
+			// Idle is a state worth reporting, at a rate that will not fill
+			// the events table: it is the difference between "the window is
+			// shut" and "the node died at midnight".
+			if time.Since(a.idleReported) > 5*time.Minute {
+				_ = a.client.Event(ctx, "info", "NODE_IDLE", 0, reason, "")
+				a.idleReported = time.Now()
+			}
+			// A one-shot node has nothing to wait for. Sleeping here would
+			// keep a cron job alive for hours outside the window instead of
+			// letting it exit with "nothing to do".
+			if a.MaxJobs > 0 {
+				return nil
 			}
 			if !sleep(ctx, wait) {
 				break
