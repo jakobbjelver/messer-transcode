@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ func cmdServe(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	cfgPath := fs.String("config", "config.json", "path to config.json")
 	dbPath := fs.String("db", "", "state database (default: <config dir>/state.db)")
 	listen := fs.String("listen", "", "address to listen on (default: from config, :8099)")
+	tokenFile := fs.String("token-file", "", "read the node token from this file instead of the config")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
@@ -31,6 +33,22 @@ func cmdServe(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	if err != nil {
 		say(stderr, "%v\n", err)
 		return ExitInvalid
+	}
+	// The token is a secret, so it must not live in the config file that is
+	// kept in version control beside it. It comes from a file, or from the
+	// environment when a deployment prefers that.
+	if *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			say(stderr, "cannot read %s: %v\n", *tokenFile, err)
+			return ExitInvalid
+		}
+		cfg.Server.Token = strings.TrimSpace(string(b))
+	}
+	if cfg.Server.Token == "" {
+		if v := os.Getenv("MESSER_TRANSCODE_TOKEN"); v != "" {
+			cfg.Server.Token = v
+		}
 	}
 	db := *dbPath
 	if db == "" {
