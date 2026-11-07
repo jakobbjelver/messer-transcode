@@ -71,6 +71,13 @@ host read the same file without complaint. A named volume is a real filesystem
 and the errors disappear. Config stays read-only on the bind mount; only the
 queue is on the volume.
 
+A fresh volume is created root-owned, so give it to the container's user once:
+
+```bash
+docker run --rm -v video-stack_transcode_state:/data alpine:latest \
+  chown 501:20 /data
+```
+
 The consequence to know: the host can no longer read the live queue. `doctor
 --role server` against a path is now a check of a copy, not the original — the
 authoritative answer for the server half is `GET /api/v1/health`, which is what
