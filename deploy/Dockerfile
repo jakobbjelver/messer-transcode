@@ -33,4 +33,4 @@ EXPOSE 8099
 # so the whole service is one bind mount and a backup of that mount is a backup
 # of the queue.
 ENTRYPOINT ["/usr/local/bin/messer-transcode"]
-CMD ["serve", "--config", "/config/config.json", "--db", "/config/state.db", "--token-file", "/config/server.token", "--listen", ":8099"]
+CMD ["serve", "--config", "/config/config.json", "--db", "/data/state.db", "--token-file", "/config/server.token", "--listen", ":8099"]
