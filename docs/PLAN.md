@@ -836,6 +836,27 @@ the quality target is the only dial.
   happens at this throughput), and ingest hashes the head and tail megabyte rather than whole files
   (hashing 40 GB costs more than the copy it is meant to justify).
 
+- **rev 8** (2026-11-06): **M7 complete — the system can now answer "am I working?".** `health.Collect`
+  produces one object; `doctor` prints it and exits on it (0 ok · 1 degraded · 3 broken), and
+  `/api/v1/health` returns the same thing with `503` when broken. `~/Scripts/health/transcode-health.sh`
+  reads either, so the daily check and a human cannot disagree by construction.
+  **Gate, all four verified by hand and in tests:** node stopped → `E_NODE_SILENT`; broken config →
+  `E_CONFIG_INVALID`; ffmpeg off PATH → `E_BINARY_MISSING`; healthy → `status: ok`.
+  What the checks are, and why each earned its place:
+  * **the dependency sweep** (`otool -L` + Stat on every non-system path) is the check that would have
+    caught the outage that started this project. Writing it produced its own false positive first:
+    otool's header line is the binary itself, so ffmpeg was reported as its own missing dependency.
+  * **`E_NODE_SILENT` is a failure, not a warning** when work is queued. That single distinction is
+    the difference between this and the health check that stayed green for months.
+  * **the encoder check encodes a test frame**, because "ffmpeg exists" and "VideoToolbox works" are
+    not the same claim.
+  * **the config is re-read from disk**, so a file edited after the process started is caught rather
+    than described from memory.
+  One root cause reports one code: with a broken config or missing binaries the dependent checks are
+  skipped instead of stacking three secondary failures onto the same report.
+  Also shipped: `docs/history-tdarr.md` (what Tdarr was, the three reasons it went, what was kept),
+  and the transcode section in the `system-health-check` skill with the code table.
+
 ### How to resume after a context reset
 
 1. Read this file top to bottom — §1 carries the measured facts, §2 the binding decisions.
