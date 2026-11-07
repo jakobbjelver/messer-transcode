@@ -31,6 +31,7 @@ commands:
   run                     encode, verify and replace
   serve                   run the orchestrator API and dashboard
   node                    claim and process work from an orchestrator
+  doctor                  check that this system can actually do its job
   calibrate               measure the VMAF/bitrate curve of this library
   schema                  print the JSON Schema for config.json
   help                    this text
@@ -38,7 +39,7 @@ commands:
 flags:
   --json                  machine-readable output
 
-exit codes: 0 ok · 1 runtime error · 2 usage · 3 invalid config
+exit codes: 0 ok · 1 runtime error or degraded · 2 usage · 3 broken or invalid
 `
 
 // say writes to stdout or stderr. The write error is deliberately ignored: a
@@ -88,6 +89,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return cmdServe(stdout, stderr, rest[1:], jsonOut)
 	case "node":
 		return cmdNode(stdout, stderr, rest[1:], jsonOut)
+	case "doctor":
+		return cmdDoctor(stdout, stderr, rest[1:], jsonOut)
 	case "calibrate":
 		return cmdCalibrate(stdout, stderr, rest[1:], jsonOut)
 	default:

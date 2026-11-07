@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jakobbjelver/messer-transcode/internal/health"
 	"github.com/jakobbjelver/messer-transcode/internal/store"
 	"github.com/jakobbjelver/messer-transcode/internal/version"
 )
@@ -45,6 +46,24 @@ func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
 		resp["live"] = nil
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// apiHealth returns the same verdict object as `doctor`, plus the queue's view
+// of the world. 503 when broken so a container healthcheck and a shell script
+// both get it right without parsing.
+func (s *Server) apiHealth(w http.ResponseWriter, r *http.Request) {
+	rep := health.Collect(r.Context(), health.In{
+		Config:     s.cfg,
+		ConfigPath: s.cfgPath,
+		Store:      s.st,
+		DBPath:     s.dbPath,
+		Role:       health.RoleServer,
+	})
+	status := http.StatusOK
+	if rep.Status == health.Broken {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, rep)
 }
 
 func (s *Server) apiLive(w http.ResponseWriter, r *http.Request) {
