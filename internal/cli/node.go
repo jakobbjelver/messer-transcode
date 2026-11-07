@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,6 +25,7 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	cfgPath := fs.String("config", "config.json", "path to config.json")
 	serverURL := fs.String("server", "", "orchestrator URL (default: server.url in the config)")
 	serverToken := fs.String("token", "", "node token (default: server.token in the config)")
+	tokenFile := fs.String("token-file", "", "read the node token from this file")
 	name := fs.String("name", "", "node name for the logs (default: hostname)")
 	journalPath := fs.String("journal", "", "crash journal (default: <config dir>/node.journal)")
 	once := fs.Bool("once", false, "claim and process one file, then exit")
@@ -72,6 +74,18 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 				return ExitRuntime
 			}
 		}
+	}
+
+	if *serverToken == "" && *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			say(stderr, "cannot read %s: %v\n", *tokenFile, err)
+			return ExitInvalid
+		}
+		*serverToken = strings.TrimSpace(string(b))
+	}
+	if *serverToken == "" {
+		*serverToken = os.Getenv("MESSER_TRANSCODE_TOKEN")
 	}
 
 	journal := *journalPath

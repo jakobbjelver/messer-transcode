@@ -29,7 +29,8 @@ COPY --from=build /out/messer-transcode /usr/local/bin/messer-transcode
 USER nonroot:nonroot
 EXPOSE 8099
 
-# Until the server subcommand lands (M3) the default is the version banner, so
-# the image is runnable and honest rather than exiting on an unknown command.
+# The orchestrator. It reads /config/config.json and keeps its state next to it,
+# so the whole service is one bind mount and a backup of that mount is a backup
+# of the queue.
 ENTRYPOINT ["/usr/local/bin/messer-transcode"]
-CMD ["version"]
+CMD ["serve", "--config", "/config/config.json", "--db", "/config/state.db", "--token-file", "/config/server.token", "--listen", ":8099"]
