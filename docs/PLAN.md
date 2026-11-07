@@ -886,8 +886,10 @@ the quality target is the only dial.
   * **Auto-generated startup scripts do not know about a new service.** `start-video.sh` is generated
     from `services.yaml`; until it was regenerated, Komodo created the container and left it stopped.
   **Gate is calendar time, not work:** seven consecutive nights with zero failures, the library
-  shrinking by roughly 95 GB/night, and `transcode-health.sh` green in the daily check. Tonight is
-  night one.
+  shrinking every night, and `transcode-health.sh` green in the daily check. Tonight is night one.
+  **Do not quote a nightly reclaim rate yet** — the only measured throughput is two files in 14
+  minutes (one encode at 9×, one remux). A full night over the USB volume, with ingest and placement
+  in the same window, is the first honest number, and it arrives tomorrow.
 
 ### How to resume after a context reset
 
