@@ -800,6 +800,22 @@ the quality target is the only dial.
   visibly running job. All fixed; `docs/server.md` records them so they are not relearned.
   Remaining for M4: the node agent itself, which turns these endpoints into an actual worker.
 
+- **rev 6** (2026-11-06): **M4 complete — there is a worker.** `node` registers, claims, processes,
+  reports and asks again; the server owns the queue and answers with `X-Claim-Status`
+  (`window-shut`, `draining`, `empty`). Three defences against a dead node, in order of speed:
+  progress every two seconds, a five-minute lease reaped on the claim path, and a journal that
+  makes the next start report `E_NODE_INTERRUPTED`. The gate ran for real: TERM at 51 % of a
+  feature, drain message, finish, verify, replace, exit 0 at 4 m 20 s.
+  Two findings worth carrying forward:
+  * **A node that claims and silently drops a file is worse than one that refuses to start.** The
+    CLI forgot to wire `Process`; the agent claimed a job and returned in milliseconds. `Run` now
+    refuses to operate without a work function. The claimed row sat in `encoding` until the lease.
+  * **ffmpeg's own progress cannot be trusted on files with many subtitle streams.** A 35-minute
+    episode with 40 `subrip` tracks reported 3 % and `speed=N/A` while the output was two thirds
+    written. Progress is now bytes-on-disk against the projected size, and speed is derived from
+    that. This is the number the UI shows, so it had to be true rather than convenient.
+  Next: M5 (pre-stage lanes, disk floors, metrics), then M7 (doctor/health), M8 (kill Tdarr), M9 (public).
+
 ### How to resume after a context reset
 
 1. Read this file top to bottom — §1 carries the measured facts, §2 the binding decisions.
