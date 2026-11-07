@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="messer-transcode">
+  <!--
+    A film frame with sprocket rails on both sides, and one frame lit.
+    Symmetric on the horizontal axis so it does not lean, with the accent
+    optically centred inside the opening — a mark that is almost centred reads
+    as a mistake. Four shapes, one accent colour, works at 16px.
+  -->
+  <rect width="128" height="128" fill="#0c0c0c"/>
+
+  <!-- sprocket rails -->
+  <g fill="#edebe8">
+    <rect x="18" y="26" width="13" height="14"/>
+    <rect x="18" y="57" width="13" height="14"/>
+    <rect x="18" y="88" width="13" height="14"/>
+
+    <rect x="97" y="26" width="13" height="14"/>
+    <rect x="97" y="57" width="13" height="14"/>
+    <rect x="97" y="88" width="13" height="14"/>
+  </g>
+
+  <!-- frame -->
+  <rect x="38" y="20" width="52" height="88" fill="none" stroke="#edebe8" stroke-width="5"/>
+
+  <!-- the frame being worked on -->
+  <rect x="50" y="44" width="28" height="40" fill="#e8a33d"/>
+</svg>

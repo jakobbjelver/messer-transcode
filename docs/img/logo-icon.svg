@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="messer-transcode">
+  <!--
+    Drawn at 16 units, not scaled down from the 128px mark: at that size a
+    stroked frame turns to mush, so the frame outline is gone, the aperture is
+    bigger, and the perforations are 2px blocks that survive rasterisation.
+  -->
+  <rect width="16" height="16" fill="#0c0c0c"/>
+  <rect x="5" y="3" width="6" height="10" fill="#e8a33d"/>
+  <g fill="#edebe8">
+    <rect x="2" y="4" width="2" height="2"/>
+    <rect x="2" y="7" width="2" height="2"/>
+    <rect x="2" y="10" width="2" height="2"/>
+    <rect x="12" y="4" width="2" height="2"/>
+    <rect x="12" y="7" width="2" height="2"/>
+    <rect x="12" y="10" width="2" height="2"/>
+  </g>
+</svg>

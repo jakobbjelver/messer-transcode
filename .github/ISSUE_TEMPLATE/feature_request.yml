@@ -1,0 +1,45 @@
+name: Idea or wrong decision
+description: A rule that decides badly, or something the tool should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful idea here is usually a **decision the rules got wrong**:
+        a file, its `ffprobe` output, and the rule code it received. The rule list
+        is deliberately small and it is meant to be argued with.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What should change, and what it would do for your library.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        Numbers beat opinions here. A calibration result from your hardware, a
+        file the rules misjudged, a measurement that contradicts the docs — this
+        is the section that gets an idea taken seriously.
+      placeholder: |
+        42 files matched R_ALREADY_LEAN but re-encoding at the same target
+        produced 18% smaller output at VMAF 95.6. Here are three of them…
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it belong
+      options:
+        - The rules / decisions
+        - The quality ladder
+        - The orchestrator or API
+        - The worker
+        - Health checks and reporting
+        - Documentation
+        - Not sure
+    validations:
+      required: true
