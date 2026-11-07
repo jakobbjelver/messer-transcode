@@ -89,6 +89,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return cmdServe(stdout, stderr, rest[1:], jsonOut)
 	case "node":
 		return cmdNode(stdout, stderr, rest[1:], jsonOut)
+	case "sweep":
+		return cmdSweep(stdout, stderr, args[1:], jsonOut)
 	case "report":
 		return cmdReport(stdout, stderr, args[1:], jsonOut)
 	case "doctor":
