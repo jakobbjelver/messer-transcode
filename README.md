@@ -1,4 +1,4 @@
-<img src="docs/img/logo.svg" width="76" height="76" alt="">
+<img src="docs/img/logo.svg" width="96" height="96" alt="">
 
 # messer-transcode
 
@@ -38,10 +38,13 @@ re-encoding. On a 3,109-file, 10.26 TB library it wanted:
 | leave alone | 720 | already lean, or a projected saving under 10 % |
 | unreadable | 4 | zero-byte files that predate this tool |
 
-Projected: **669 GB** returned to disk. Tdarr's flow asked for 92 % of the same
-library; this asks for 14 %.
+Projected: **669 GB** returned to disk. Tdarr's flow wanted to *re-encode* 92 %
+of the same library; this re-encodes **12 %** and touches the rest only to remux
+or not at all.
 
-![The dashboard: reclaim, queue, the run in flight, and the last few runs](docs/img/dashboard.png)
+<p align="center">
+  <img src="docs/img/dashboard.png" width="820" alt="The dashboard: the reclaim, the queue, the run in flight, and the last few runs">
+</p>
 
 ## The four ideas it is built on
 
