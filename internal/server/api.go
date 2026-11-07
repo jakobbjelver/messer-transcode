@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jakobbjelver/messer-transcode/internal/health"
+	"github.com/jakobbjelver/messer-transcode/internal/report"
 	"github.com/jakobbjelver/messer-transcode/internal/store"
 	"github.com/jakobbjelver/messer-transcode/internal/version"
 )
@@ -51,6 +52,27 @@ func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
 // apiHealth returns the same verdict object as `doctor`, plus the queue's view
 // of the world. 503 when broken so a container healthcheck and a shell script
 // both get it right without parsing.
+// apiRuns reports what the last few runs did. "Run" means one occurrence of the
+// configured window; the hours come from the config, so a window moved to the
+// middle of the day reports identically.
+func (s *Server) apiRuns(w http.ResponseWriter, r *http.Request) {
+	last := 7
+	if v := r.URL.Query().Get("last"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 90 {
+			last = n
+		}
+	}
+	runs, err := report.Collect(r.Context(), s.st, s.cfg.Schedule, time.Now(), last)
+	if err != nil {
+		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"schedule": s.cfg.Schedule,
+		"runs":     runs,
+	})
+}
+
 func (s *Server) apiHealth(w http.ResponseWriter, r *http.Request) {
 	rep := health.Collect(r.Context(), health.In{
 		Config:     s.cfg,

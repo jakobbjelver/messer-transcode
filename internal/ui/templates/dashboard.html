@@ -60,7 +60,33 @@
 </section>
 
 <section>
-  <div class="sec"><span class="no">[05]</span><span>Activity</span><span class="rule"></span>
+  <div class="sec"><span class="no">[05]</span><span>The runs</span><span class="rule"></span>
+    <span class="aside">{{.ScheduleLabel}}</span></div>
+
+  {{if .Runs}}
+  <table>
+    <thead><tr><th>Window</th><th>Done</th><th>Back</th><th>VMAF</th><th>Busy</th><th>Failed</th></tr></thead>
+    <tbody>
+    {{range .Runs}}
+      <tr>
+        <td class="num" style="text-align:left">{{.Start.Format "Mon 02 Jan"}} · {{.Start.Format "15:04"}}–{{.End.Format "15:04"}}{{if .Open}} <b class="stage">live</b>{{end}}</td>
+        <td class="num">{{.Done}}{{if .Encoded}}<span class="aside"> · {{.Encoded}}e</span>{{end}}</td>
+        <td class="num">{{gb .Reclaimed}} GB</td>
+        <td class="num">{{if .VmafN}}{{printf "%.1f" .VmafMean}}{{else}}—{{end}}</td>
+        <td class="num">{{pct .BusyPercent}}%</td>
+        <td class="num {{if .Failed}}st-failed{{end}}">{{.Failed}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <div class="fig">FIG. 3 — one row per occurrence of the configured window, whatever hours it covers · busy is encoder time against window time</div>
+  {{else}}
+  <div class="empty">No run has closed yet. The window is {{.WindowNote}}.</div>
+  {{end}}
+</section>
+
+<section>
+  <div class="sec"><span class="no">[06]</span><span>Activity</span><span class="rule"></span>
     <span class="aside">last {{len .Events}}</span></div>
 
   {{if .Events}}
