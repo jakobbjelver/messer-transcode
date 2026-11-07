@@ -80,6 +80,11 @@ type In struct {
 	// OpenError is why the store could not be opened, when that is the case.
 	OpenError error
 
+	// SkipHostChecks disables the checks that only make sense on the machine
+	// that runs the encoder: binaries, encoder, disk. Tests set it so a verdict
+	// does not depend on what the build machine happens to have installed.
+	SkipHostChecks bool
+
 	Now time.Time
 }
 
@@ -106,7 +111,7 @@ func Collect(ctx context.Context, in In) Report {
 	add(checkConfig(in))
 	add(checkDatabase(ctx, in))
 
-	if in.Role == RoleNode {
+	if in.Role == RoleNode && !in.SkipHostChecks {
 		// These two do not read the config, so they are worth running even
 		// when it is broken.
 		bins := checkBinaries()

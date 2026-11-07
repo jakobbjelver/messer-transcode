@@ -51,7 +51,7 @@ func TestHealthyReportsOK(t *testing.T) {
 	cfg := testConfig(t)
 	st := testStore(t)
 	rep := Collect(context.Background(), In{
-		Config: cfg, Store: st, Role: RoleNode, Now: time.Now(),
+		Config: cfg, Store: st, Role: RoleNode, SkipHostChecks: true, Now: time.Now(),
 	})
 	if rep.Status != OK {
 		t.Fatalf("status = %s, want ok; checks: %+v", rep.Status, rep.Checks)
@@ -105,7 +105,8 @@ func TestBrokenConfigReportsOneCause(t *testing.T) {
 
 	_, loadErr := config.Load(path)
 	rep := Collect(context.Background(), In{
-		ConfigPath: path, OpenError: loadErr, Store: testStore(t), Role: RoleNode, Now: time.Now(),
+		ConfigPath: path, OpenError: loadErr, Store: testStore(t), Role: RoleNode,
+		SkipHostChecks: true, Now: time.Now(),
 	})
 	if rep.Status != Broken {
 		t.Fatalf("status = %s, want broken", rep.Status)
@@ -214,7 +215,7 @@ func TestReportCarriesQueueDepth(t *testing.T) {
 		Decision: "encode", Code: "R_H264_ENCODE", KeyKbps: 6000, State: "planned",
 	})
 
-	rep := Collect(ctx, In{Config: cfg, Store: st, Role: RoleNode, Now: time.Now()})
+	rep := Collect(ctx, In{Config: cfg, Store: st, Role: RoleNode, SkipHostChecks: true, Now: time.Now()})
 	if rep.Queued != 1 {
 		t.Errorf("queued = %d, want 1", rep.Queued)
 	}
