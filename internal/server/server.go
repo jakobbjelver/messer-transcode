@@ -19,6 +19,7 @@ import (
 
 	"github.com/jakobbjelver/messer-transcode/internal/config"
 	"github.com/jakobbjelver/messer-transcode/internal/planner"
+	"github.com/jakobbjelver/messer-transcode/internal/report"
 	"github.com/jakobbjelver/messer-transcode/internal/store"
 	"github.com/jakobbjelver/messer-transcode/internal/ui"
 	"github.com/jakobbjelver/messer-transcode/internal/version"
@@ -57,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.healthz)
 
 	mux.HandleFunc("GET /api/v1/health", s.apiHealth)
+	mux.HandleFunc("GET /api/v1/runs", s.apiRuns)
 	mux.HandleFunc("GET /api/v1/status", s.apiStatus)
 	mux.HandleFunc("GET /api/v1/live", s.apiLive)
 	mux.HandleFunc("GET /api/v1/files", s.apiFiles)
@@ -145,6 +147,12 @@ type dashboardView struct {
 	Done       int
 	Encodable  int
 	WindowNote string
+	// ScheduleLabel states the schedule the runs are cut against, and Runs is
+	// what the last few of them actually did. Neither knows or cares that the
+	// window is currently at night.
+	ScheduleLabel string
+	Runs          []report.Run
+	Now           time.Time
 }
 
 // ── pages ─────────────────────────────────────────────────────────────────
@@ -167,13 +175,16 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	done := snap.States["done"]
 
 	v := dashboardView{
-		base:       s.base("Overview", "overview", live, hasLive),
-		Dashboard:  snap,
-		Events:     events,
-		Strip:      strip(done, encodable, hasLive),
-		Done:       done,
-		Encodable:  encodable,
-		WindowNote: s.windowNote(),
+		base:          s.base("Overview", "overview", live, hasLive),
+		Dashboard:     snap,
+		Events:        events,
+		Strip:         strip(done, encodable, hasLive),
+		Done:          done,
+		Encodable:     encodable,
+		WindowNote:    s.windowNote(),
+		ScheduleLabel: s.scheduleLabel(),
+		Runs:          s.recentRuns(ctx, 5),
+		Now:           time.Now(),
 	}
 	if hasLive {
 		v.Job = jobFrom(live)
@@ -397,6 +408,33 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
+
+// scheduleLabel is the one line that tells a reader when this thing is allowed
+// to work — including when that changes on a weekend or if the window is moved
+// to the middle of the day.
+func (s *Server) scheduleLabel() string {
+	drain := ""
+	if m := s.cfg.Schedule.DrainBeforeMinutes; m > 0 {
+		drain = fmt.Sprintf(" · drain %dm", m)
+	}
+	tz := s.cfg.Schedule.Timezone
+	if tz == "" {
+		tz = "UTC"
+	}
+	return fmt.Sprintf("weekdays %s · weekends %s · %s%s",
+		s.cfg.Schedule.Weekday, s.cfg.Schedule.Weekend, tz, drain)
+}
+
+// recentRuns is the report for the dashboard: best effort, because a failure to
+// count last night must not take the page down.
+func (s *Server) recentRuns(ctx context.Context, n int) []report.Run {
+	runs, err := report.Collect(ctx, s.st, s.cfg.Schedule, time.Now(), n)
+	if err != nil {
+		s.log.Warn("runs", "err", err)
+		return nil
+	}
+	return runs
+}
 
 func (s *Server) base(title, page string, live store.Live, running bool) base {
 	open, window, _ := s.windowState()
