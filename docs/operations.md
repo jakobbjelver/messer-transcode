@@ -39,21 +39,28 @@ Two halves, deployed differently.
 
 **The orchestrator** is a container in `video-stack`, declared in
 `~/Server/compose.video.yaml` and deployed through Komodo like every other
-service. It mounts `/config` — `configs/transcode` — and nothing else. It has no
-access to the media volume, which is the point: a component that cannot touch
-the library cannot damage it.
+service. It pulls `ghcr.io/jakobbjelver/messer-transcode:latest`, published by
+`.github/workflows/image.yml` on every push to `main` — the same pattern as
+server-portal and messer-request-games, so no image is ever built by hand on the
+host and `GITHUB_TOKEN` supplies the package permission.
 
-The image is built on this host, not pulled:
+Its one mount is `server_configs_video_transcode`, a bind-backed volume over
+`~/Server/configs/video/transcode` and created by `scripts/docker/create.sh`
+with every other data volume. Config and queue live together there; the
+container never sees the media library, and a component that cannot touch the
+library cannot damage it.
+
+**Only the container may write the state database.** Host-side `sqlite3` against
+a live container corrupts it — measured, 40 of 40 writes failed once both sides
+were writing, while container-only writes were clean. To re-plan while the
+orchestrator runs, use a one-shot container on the same volume:
 
 ```bash
-cd ~/Repos/messer-transcode
-make build   # the binary the node runs
-make image   # the container, tagged messer-transcode:<version>
+docker run --rm -v server_configs_video_transcode:/config \
+  --entrypoint /usr/local/bin/messer-transcode \
+  ghcr.io/jakobbjelver/messer-transcode:latest \
+  plan --config /config/config.json --db /config/state.db
 ```
-
-`pull_policy: never` in the compose file says so explicitly. Publishing to GHCR
-needs a token with `write:packages`; until one is configured the image lives only
-on this machine, and `make image` after `make build` is the update path.
 
 **The node** runs under PM2, because VideoToolbox is not reachable from a Linux
 container:
@@ -64,25 +71,6 @@ pm2 restart transcode-node                        # after make build
 pm2 logs transcode-node --lines 40 --nostream
 ```
 
-**Where the state lives.** On a Docker volume (`/data`), not on the bind mount.
-SQLite over virtiofs does not work: through the bind mount, 40 of 40 event
-writes returned IO errors and `quick_check` reported corrupt pages, while the
-host read the same file without complaint. A named volume is a real filesystem
-and the errors disappear. Config stays read-only on the bind mount; only the
-queue is on the volume.
-
-A fresh volume is created root-owned, so give it to the container's user once:
-
-```bash
-docker run --rm -v video-stack_transcode_state:/data alpine:latest \
-  chown 501:20 /data
-```
-
-The consequence to know: the host can no longer read the live queue. `doctor
---role server` against a path is now a check of a copy, not the original — the
-authoritative answer for the server half is `GET /api/v1/health`, which is what
-`transcode-health.sh` reads.
-
 **The token.** The node authenticates with a token that must not sit in
 `config.json` (committed beside it) or in the stack environment (Komodo rewrites
 `.env` from its own stack config on every deploy, and writing that array
@@ -90,11 +78,35 @@ replaces every other variable in it). It is `/config/server.token`, mode 0600,
 gitignored, and read with `--token-file`:
 
 ```bash
-openssl rand -hex 32 > ~/Server/configs/transcode/server.token
-chmod 600 ~/Server/configs/transcode/server.token
+openssl rand -hex 32 > ~/Server/configs/video/transcode/server.token
+chmod 600 ~/Server/configs/video/transcode/server.token
 ```
 
-Rotating it means regenerating the file and restarting both halves.
+**The address.** `https://transcode-server.messer.wtf`, behind Cloudflare Access
+like the rest of the stack. The Caddyfile and the tunnel are generated from
+`services.yaml`, so the subdomain is declared there and nowhere else:
+
+```bash
+python3 scripts/setup/setup.py caddy
+python3 scripts/setup/setup.py cloudflared
+```
+
+## Reporting
+
+```bash
+messer-transcode report --last 7          # one line per run
+messer-transcode report --last 7 --json   # the same, for scripts
+curl -s localhost:8099/api/v1/runs?last=7
+```
+
+A **run** is one occurrence of the window in `schedule.*` — not a night. Point
+the window at `09:00-17:00` and the report describes that window with the same
+columns: files done, encoded vs remuxed, bytes back, VMAF mean and minimum,
+share of the window covered, failures and skips by code. Nothing in the schema
+or the naming assumes the work happens after dark.
+
+The dashboard states the schedule it cuts runs against, so a changed window is
+visible without reading the config.
 
 ## Stopping
 

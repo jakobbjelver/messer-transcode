@@ -61,6 +61,13 @@ func cmdServe(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	}
 	defer func() { _ = st.Close() }()
 
+	// Start clean: anything the previous instance left mid-flight is returned to
+	// the queue once, at boot, whether or not the window is open.
+	if n, err := st.ReapExpired(context.Background(), 5*time.Minute); err == nil && n > 0 {
+		log := slog.New(slog.NewTextHandler(stderr, nil))
+		log.Warn("requeued abandoned jobs at startup", "count", n)
+	}
+
 	addr := cfg.Server.Listen
 	if *listen != "" {
 		addr = *listen

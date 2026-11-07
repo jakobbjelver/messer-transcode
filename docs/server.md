@@ -6,7 +6,7 @@ volume. Everything it knows came from a node, which is why it can live in a
 container on a machine that cannot see `/Volumes` at all.
 
 ```
-messer-transcode serve --config ~/Server/configs/transcode/config.json
+messer-transcode serve --config ~/Server/configs/video/transcode/config.json
                         --db /path/state.db --listen :8099
 ```
 
@@ -28,6 +28,8 @@ fight, so run one; the node is the thing you scale.
 | GET | `/api/v1/files` | `?state=&decision=&limit=&offset=` |
 | GET | `/api/v1/files/{id}` | one file, full detail |
 | GET | `/api/v1/events` | `?limit=`, newest first |
+| GET | `/api/v1/runs` | `?last=N` — one row per occurrence of the configured window |
+| GET | `/api/v1/health` | the verdict object; `503` when broken |
 | POST | `/api/v1/node/register` | handshake, returns server time |
 | POST | `/api/v1/node/claim` | claim one job, or `204` when there is none |
 | POST | `/api/v1/node/jobs/{id}/heartbeat` | `{"fraction":0.42,"speed":8.4}` |

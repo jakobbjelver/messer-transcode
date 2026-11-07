@@ -198,16 +198,18 @@ func (s *Server) nodeClaim(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
+	// Give back anything whose node stopped reporting — BEFORE the window
+	// check. Reaping only when work is claimable means a file abandoned at
+	// 05:00 sits in "encoding" until 00:30, showing a phantom job on the
+	// dashboard for nineteen hours.
+	if n, err := s.st.ReapExpired(r.Context(), leaseDuration); err == nil && n > 0 {
+		s.log.Warn("requeued abandoned jobs", "count", n)
+	}
+
 	if ok, reason := s.claimsAllowed(time.Now()); !ok {
 		w.Header().Set("X-Claim-Status", reason)
 		w.WriteHeader(http.StatusNoContent)
 		return
-	}
-
-	// Give back anything whose node stopped reporting. This is the only place
-	// it matters, so it costs nothing when nobody is asking.
-	if n, err := s.st.ReapExpired(r.Context(), leaseDuration); err == nil && n > 0 {
-		s.log.Warn("requeued abandoned jobs", "count", n)
 	}
 
 	work, err := s.st.ClaimWork(r.Context(), 1)

@@ -864,7 +864,7 @@ the quality target is the only dial.
   the calibrated projection, not the pre-calibration 780 GB.
   **Cutover:** `transcode` replaced `tdarr` in `compose.video.yaml` and `services.yaml`, deployed
   through Komodo as a member of video-stack. Always-on orchestrator container, 27 MB image, mounts
-  only `configs/transcode`. The node runs under PM2 from `deploy/ecosystem.transcode.config.cjs`
+  only `configs/video/transcode`. The node runs under PM2 from `deploy/ecosystem.transcode.config.cjs`
   with `kill_timeout` of ten minutes so a restart does not throw away an encode.
   **Removal:** container, PM2 app, wrapper, ecosystem file, compose entry, local domain label, backup
   exclusion. Config archived (381 MB, includes the Tdarr `database.db` that `docs/plan-diff.md` cites)
