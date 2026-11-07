@@ -300,8 +300,14 @@ func checkDisk(in In) Check {
 	for _, dir := range []string{in.Config.Paths.Scratch, in.Config.Paths.Quarantine} {
 		free, err := freeGB(dir)
 		if err != nil {
+			// A missing directory under a mounted volume is a very different
+			// problem from a missing volume, and the fix is different.
+			fix := "the volume is not mounted"
+			if _, parentErr := os.Stat(filepath.Dir(dir)); parentErr == nil {
+				fix = "create the directory, or point the config at one that exists"
+			}
 			return Check{Name: "disk", Status: Broken, Code: "E_PATH_UNWRITABLE",
-				Detail: fmt.Sprintf("%s: %v", dir, err), Fix: "the volume is not mounted"}
+				Detail: fmt.Sprintf("%s: %v", dir, err), Fix: fix}
 		}
 		if free < need {
 			low = append(low, fmt.Sprintf("%s has %.0f GB (needs %d)", dir, free, in.Config.Safety.MinFreeGB))

@@ -63,6 +63,17 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 		}
 	}
 
+	// Create the working directories instead of failing on a fresh install: a
+	// missing subdirectory under a mounted volume is not a configuration error.
+	for _, dir := range []string{cfg.Paths.Scratch, cfg.Paths.Quarantine} {
+		if dir != "" {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				say(stderr, "cannot create %s: %v\n", dir, err)
+				return ExitRuntime
+			}
+		}
+	}
+
 	journal := *journalPath
 	if journal == "" {
 		journal = filepath.Join(filepath.Dir(*cfgPath), "node.journal")
