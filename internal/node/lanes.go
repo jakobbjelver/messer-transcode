@@ -23,11 +23,10 @@ type egress struct {
 }
 
 type egressItem struct {
-	id      int64
-	path    string
-	run     func(context.Context) error
-	done    func(time.Duration)
-	started time.Time
+	id   int64
+	path string
+	run  func(context.Context) error
+	done func(time.Duration)
 }
 
 func newEgress(log func(transcode.Event)) *egress {

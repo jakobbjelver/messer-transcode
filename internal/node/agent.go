@@ -339,13 +339,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	wait := a.Idle
 	refusals := 0
 	done := 0
-	for {
-		if ctx.Err() != nil {
-			break
-		}
-		if a.MaxJobs > 0 && done >= a.MaxJobs {
-			break
-		}
+	for ctx.Err() == nil && (a.MaxJobs == 0 || done < a.MaxJobs) {
 		if a.DiskGuard != nil {
 			if err := a.DiskGuard(); err != nil {
 				a.log(transcode.Event{Stage: "idle", Code: "E_DISK_LOW", Message: err.Error()})
