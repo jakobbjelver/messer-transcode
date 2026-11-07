@@ -11,7 +11,7 @@ messer-transcode schema                   # the JSON Schema, for editors
 
 ## Where it lives
 
-Operationally: `~/Server/configs/transcode/config.json`, alongside the other service configs.
+Operationally: `~/Server/configs/video/transcode/config.json`, alongside the other service configs.
 In the repo: `config.example.json` is the shipped, validated example. Real configs are gitignored
 because they contain host paths.
 
