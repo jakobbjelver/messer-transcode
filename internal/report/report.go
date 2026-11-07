@@ -75,13 +75,21 @@ func (r Run) WindowSeconds(now time.Time) int64 {
 	return int64(end.Sub(r.Start).Seconds())
 }
 
-// Utilisation is the share of the window the node spent encoding, 0-100.
+// Utilisation is the share of the window covered by file time, 0-100.
+//
+// It is an upper bound, not encoder utilisation: ingest, encode and placement
+// run in separate lanes, so two files' wall time can overlap. Clamped to 100
+// for that reason — a number above that reads as a bug rather than as work.
 func (r Run) Utilisation(now time.Time) float64 {
 	w := r.WindowSeconds(now)
 	if w <= 0 {
 		return 0
 	}
-	return float64(r.BusySeconds) / float64(w) * 100
+	u := float64(r.BusySeconds) / float64(w) * 100
+	if u > 100 {
+		return 100
+	}
+	return u
 }
 
 // Windows returns the last n window occurrences up to now, newest first,
@@ -210,7 +218,7 @@ GROUP BY 1`, from, to)
 		r.SkippedCodes[code] = c
 		r.Skipped += c
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	r.BusyPercent = r.Utilisation(now)
 	if len(r.FailedCodes) == 0 {
