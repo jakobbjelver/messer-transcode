@@ -80,6 +80,13 @@ type In struct {
 	// OpenError is why the store could not be opened, when that is the case.
 	OpenError error
 
+	// ServerReport is the verdict from the live orchestrator, when the caller
+	// could reach it. Anything that depends on the database is taken from there
+	// rather than from a local read: a host read of a bind-mounted WAL file is
+	// stale by minutes while the container is writing it, which turns a healthy
+	// system into a false E_NODE_SILENT.
+	ServerReport *Report
+
 	// SkipHostChecks disables the checks that only make sense on the machine
 	// that runs the encoder: binaries, encoder, disk. Tests set it so a verdict
 	// does not depend on what the build machine happens to have installed.
@@ -109,7 +116,11 @@ func Collect(ctx context.Context, in In) Report {
 	add := func(c Check) { rep.Checks = append(rep.Checks, c) }
 
 	add(checkConfig(in))
-	add(checkDatabase(ctx, in))
+	if in.ServerReport == nil {
+		// Otherwise the orchestrator's own database check is used below; two
+		// checks for one thing is how a report starts contradicting itself.
+		add(checkDatabase(ctx, in))
+	}
 
 	if in.Role == RoleNode && !in.SkipHostChecks {
 		// These two do not read the config, so they are worth running even
@@ -123,15 +134,23 @@ func Collect(ctx context.Context, in In) Report {
 		}
 		if in.Config != nil {
 			add(checkDisk(in))
+			add(checkQuarantine(in, now))
 		}
 	}
-	// Asked on both sides: on the host it means "is anything running", in the
-	// container it means "can anyone hear the host". Same question.
-	if in.Store != nil && in.Config != nil {
+	// Anything that reads the queue is taken from the live orchestrator when we
+	// can reach it: a local read of the bind-mounted database lags behind the
+	// container's writes by minutes, which reports a working system as silent.
+	if in.ServerReport != nil {
+		for _, c := range in.ServerReport.Checks {
+			switch c.Name {
+			case "database", "node", "window", "progress":
+				c.Detail = c.Detail + " (from the orchestrator)"
+				add(c)
+			}
+		}
+		rep.Queued = in.ServerReport.Queued
+	} else if in.Store != nil && in.Config != nil {
 		add(checkNodeSeen(ctx, in, now))
-	}
-
-	if in.Store != nil && in.Config != nil {
 		add(checkWindow(in))
 		add(checkProgress(ctx, &rep, in, now))
 		rep.Queued = queued(ctx, in.Store)
@@ -325,6 +344,50 @@ func checkDisk(in In) Check {
 	}
 	free, _ := freeGB(in.Config.Paths.Scratch)
 	return Check{Name: "disk", Status: OK, Detail: fmt.Sprintf("scratch has %.0f GB free", free)}
+}
+
+// checkQuarantine notices when originals stop expiring.
+//
+// The quarantine grows by the size of every replaced file. If the sweep stops —
+// the node is down, the marker is stale, the code regressed — the first sign is
+// a directory older than the keep window, long before the disk complains.
+func checkQuarantine(in In, now time.Time) Check {
+	root := in.Config.Paths.Quarantine
+	if root == "" {
+		return Check{Name: "quarantine", Status: OK, Detail: "not configured"}
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return Check{Name: "quarantine", Status: OK, Detail: "nothing quarantined yet"}
+	}
+	keep := in.Config.Safety.KeepQuarantineDays
+	var oldest time.Time
+	var files int
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		d, err := time.ParseInLocation("2006-01-02", e.Name(), now.Location())
+		if err != nil {
+			continue
+		}
+		files++
+		if oldest.IsZero() || d.Before(oldest) {
+			oldest = d
+		}
+	}
+	if files == 0 {
+		return Check{Name: "quarantine", Status: OK, Detail: "nothing quarantined yet"}
+	}
+
+	age := int(now.Sub(oldest).Hours() / 24)
+	if keep > 0 && age > keep+1 {
+		return Check{Name: "quarantine", Status: Degraded, Code: "E_SWEEP_STALE",
+			Detail: fmt.Sprintf("oldest is %d days old but keep_quarantine_days is %d", age, keep),
+			Fix:    "the node sweeps daily; check pm2 logs transcode-node for E_SWEEP"}
+	}
+	return Check{Name: "quarantine", Status: OK,
+		Detail: fmt.Sprintf("%d dated directories, oldest %d days (keep %d)", files, age, keep)}
 }
 
 func checkWindow(in In) Check {

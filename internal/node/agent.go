@@ -13,11 +13,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jakobbjelver/messer-transcode/internal/config"
+	"github.com/jakobbjelver/messer-transcode/internal/quarantine"
 	"github.com/jakobbjelver/messer-transcode/internal/store"
 	"github.com/jakobbjelver/messer-transcode/internal/transcode"
 )
@@ -240,6 +243,11 @@ type Agent struct {
 	// but had nothing to do.
 	idleReported time.Time
 
+	// sweepMarker is the file whose mtime says when the quarantine was last
+	// expired, so a restart does not sweep again and a node that has been up
+	// for a week still sweeps daily.
+	sweepMarker string
+
 	lastEncodeEnd time.Time
 	ready         chan *pending
 	prefetchOn    bool
@@ -306,15 +314,16 @@ func New(cfg *config.Config, client *Client, journalPath string, log func(transc
 		log = func(transcode.Event) {}
 	}
 	return &Agent{
-		cfg:      cfg,
-		client:   client,
-		journal:  newJournal(journalPath),
-		log:      log,
-		Idle:     5 * time.Second,
-		MaxIdle:  2 * time.Minute,
-		Prefetch: true,
-		Egress:   true,
-		ready:    make(chan *pending, 1),
+		cfg:         cfg,
+		client:      client,
+		journal:     newJournal(journalPath),
+		log:         log,
+		Idle:        5 * time.Second,
+		MaxIdle:     2 * time.Minute,
+		Prefetch:    true,
+		Egress:      true,
+		sweepMarker: filepath.Join(filepath.Dir(journalPath), "quarantine.sweep"),
+		ready:       make(chan *pending, 1),
 	}
 }
 
@@ -340,6 +349,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	// distinguish.
 	_ = a.client.Event(ctx, "info", "NODE_UP", 0, "node started", "")
 	a.idleReported = time.Now()
+	a.sweepQuarantine(ctx)
 	a.recoverInterrupted(ctx)
 
 	if a.Egress {
@@ -367,6 +377,10 @@ func (a *Agent) Run(ctx context.Context) error {
 			if refusals == 1 || refusals%20 == 0 {
 				a.log(transcode.Event{Stage: "idle", Message: "no work: " + reason})
 			}
+			// Expiring quarantined originals is the node's job: it is the half
+			// that can see the media volume, and the orchestrator must not.
+			a.sweepQuarantine(ctx)
+
 			// Idle is a state worth reporting, at a rate that will not fill
 			// the events table: it is the difference between "the window is
 			// shut" and "the node died at midnight".
@@ -651,6 +665,37 @@ func (a *Agent) reportTiming(ctx context.Context, job store.Work, encode, egress
 }
 
 // reportSummary logs the number that decides whether the lanes did their job.
+// sweepQuarantine expires originals past safety.keep_quarantine_days, at most
+// once a day.
+//
+// Without this the quarantine grows by the size of every file ever replaced and
+// never shrinks, which on a library this size fills the volume in a few nights.
+// It runs here, not in the orchestrator, because the container never mounts the
+// media volume.
+func (a *Agent) sweepQuarantine(ctx context.Context) {
+	if a.sweepMarker == "" || a.cfg.Paths.Quarantine == "" {
+		return
+	}
+	if st, err := os.Stat(a.sweepMarker); err == nil && time.Since(st.ModTime()) < 24*time.Hour {
+		return
+	}
+
+	res, err := quarantine.Sweep(ctx, a.cfg.Paths.Quarantine, a.cfg.Safety.KeepQuarantineDays, time.Now(), false)
+	if err != nil {
+		a.log(transcode.Event{Stage: "error", Code: "E_SWEEP", Message: err.Error()})
+		return
+	}
+	// Touch the marker even on a no-op, or a quiet week would retry every tick.
+	if f, err := os.Create(a.sweepMarker); err == nil {
+		_ = f.Close()
+	}
+	if res.Removed == 0 {
+		return
+	}
+	a.log(transcode.Event{Stage: "sweep", Message: res.Summary()})
+	_ = a.client.Event(ctx, "info", "QUARANTINE_SWEEP", 0, res.Summary(), "")
+}
+
 func (a *Agent) reportSummary() {
 	jobs, wall, encoded, idle, egress := a.stats.summary()
 	if jobs == 0 {

@@ -6,7 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/jakobbjelver/messer-transcode/internal/config"
 	"github.com/jakobbjelver/messer-transcode/internal/health"
@@ -41,13 +44,24 @@ func cmdDoctor(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 		in.Config = cfg
 	}
 
+	// Ask the live orchestrator what it thinks of the queue. A local read of
+	// the bind-mounted database lags the container's writes by minutes, which
+	// invents failures — a healthy node reported as silent is worse than no
+	// check at all.
+	if in.Config != nil && in.Config.Server.URL != "" {
+		in.ServerReport = fetchServerReport(in.Config.Server.URL)
+	}
+
 	// A database that will not open is a finding, not a reason to stop: the
-	// report should still say what it can about everything else.
-	if st, err := store.Open(db); err == nil {
-		in.Store = st
-		defer func() { _ = st.Close() }()
-	} else if in.OpenError == nil {
-		in.OpenError = err
+	// report should still say what it can about everything else. With the
+	// orchestrator's verdict in hand this is a fallback, so it stays read-only.
+	if in.ServerReport == nil {
+		if st, err := store.Open(db); err == nil {
+			in.Store = st
+			defer func() { _ = st.Close() }()
+		} else if in.OpenError == nil {
+			in.OpenError = err
+		}
 	}
 
 	rep := health.Collect(context.Background(), in)
@@ -66,6 +80,34 @@ func cmdDoctor(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	default:
 		return ExitInvalid
 	}
+}
+
+// fetchServerReport gets the orchestrator's verdict, or nil when it is not
+// reachable. Reachability is not a failure here: doctor has to work on a machine
+// where the container is down, which is exactly when it is needed.
+func fetchServerReport(base string) *health.Report {
+	url := strings.TrimRight(base, "/") + "/api/v1/health"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// The endpoint answers 503 when the verdict is broken, and that body is the
+	// report we want.
+	var rep health.Report
+	if err := json.NewDecoder(resp.Body).Decode(&rep); err != nil {
+		return nil
+	}
+	if len(rep.Checks) == 0 {
+		return nil
+	}
+	return &rep
 }
 
 func printReport(w io.Writer, rep health.Report) {

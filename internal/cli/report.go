@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
+	"net/http"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jakobbjelver/messer-transcode/internal/config"
@@ -33,29 +36,38 @@ func cmdReport(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 		say(stderr, "%v\n", err)
 		return ExitInvalid
 	}
-	db := *dbPath
-	if db == "" {
-		db = filepath.Join(filepath.Dir(*cfgPath), "state.db")
-	}
-	st, err := store.Open(db)
-	if err != nil {
-		say(stderr, "%v\n", err)
-		return ExitRuntime
-	}
-	defer func() { _ = st.Close() }()
-
 	now := time.Now()
-	runs, err := report.Collect(context.Background(), st, cfg.Schedule, now, *last)
-	if err != nil {
-		say(stderr, "%v\n", err)
-		return ExitRuntime
+
+	// The orchestrator owns the queue, so ask it first. A local read of the
+	// bind-mounted database lags the container's writes by minutes — a report
+	// built from a stale snapshot is worse than no report.
+	runs, source := runsFromServer(cfg.Server.URL, *last)
+
+	if runs == nil {
+		db := *dbPath
+		if db == "" {
+			db = filepath.Join(filepath.Dir(*cfgPath), "state.db")
+		}
+		st, err := store.Open(db)
+		if err != nil {
+			say(stderr, "%v\n", err)
+			return ExitRuntime
+		}
+		defer func() { _ = st.Close() }()
+		runs, err = report.Collect(context.Background(), st, cfg.Schedule, now, *last)
+		if err != nil {
+			say(stderr, "%v\n", err)
+			return ExitRuntime
+		}
+		source = "database " + db
 	}
 
 	if jsonOut {
 		out := struct {
 			Schedule config.Schedule `json:"schedule"`
+			Source   string          `json:"source"`
 			Runs     []report.Run    `json:"runs"`
-		}{cfg.Schedule, runs}
+		}{cfg.Schedule, source, runs}
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(out); err != nil {
@@ -72,6 +84,7 @@ func cmdReport(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 
 	say(stdout, "schedule  %s weekdays · %s weekends · %s\n",
 		cfg.Schedule.Weekday, cfg.Schedule.Weekend, cfg.Schedule.Timezone)
+	say(stdout, "source    %s\n", source)
 	say(stdout, "\n")
 	var totalReclaimed, totalDone, totalFailed int64
 	for _, r := range runs {
@@ -83,4 +96,34 @@ func cmdReport(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	say(stdout, "\n  %d runs · %d done · %d failed · %.2f GB reclaimed\n",
 		len(runs), totalDone, totalFailed, float64(totalReclaimed)/1e9)
 	return ExitOK
+}
+
+// runsFromServer reads the runs from the live orchestrator. Nil means "not
+// reachable", which is not an error: the caller falls back to a local read.
+func runsFromServer(base string, last int) ([]report.Run, string) {
+	if base == "" {
+		return nil, ""
+	}
+	url := strings.TrimRight(base, "/") + "/api/v1/runs?last=" + strconv.Itoa(last)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, ""
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out struct {
+		Runs []report.Run `json:"runs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, ""
+	}
+	if out.Runs == nil {
+		out.Runs = []report.Run{}
+	}
+	return out.Runs, "orchestrator " + base
 }

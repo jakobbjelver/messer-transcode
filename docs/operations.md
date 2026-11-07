@@ -108,6 +108,55 @@ or the naming assumes the work happens after dark.
 The dashboard states the schedule it cuts runs against, so a changed window is
 visible without reading the config.
 
+## The quarantine
+
+`safety.keep_quarantine_days` is the only thing that lets this tool delete
+anything, and it deletes only what it put there:
+
+```
+Quarantine/2026-11-07/Movies/Some Film (1999)/Some Film.mkv
+```
+
+The node expires those directories once a day, at the first idle moment inside
+the window, and reports `QUARANTINE_SWEEP` when it actually removes something. It
+runs on the node because the orchestrator never mounts the media volume. A marker
+file next to the journal (`quarantine.sweep`) keeps it to once per day across
+restarts.
+
+```bash
+messer-transcode sweep --config config.json          # dry run, always
+messer-transcode sweep --config config.json --apply  # actually delete
+```
+
+Only directories named `YYYY-MM-DD` are ever removed. A stray folder, a file, or
+a symlink in that directory is reported as ignored and left alone — the tool
+deletes what it named, and nothing else.
+
+This is not housekeeping: every re-encode grows the volume by the size of the
+file it replaces until that day arrives. Without the sweep a 10 TB library fills
+up in a few nights. `doctor` reports `E_SWEEP_STALE` when the oldest directory is
+older than the keep window, which is the first sign that the node has stopped.
+
+## Reading the queue from the host
+
+Do not. A host read of the bind-mounted database is **stale while the container
+is writing it** — measured at 36 minutes behind, with the API already showing
+events the file did not. Reads through virtiofs do not see recent writes, so a
+stale view invents failures that are not there (a healthy node reported as
+`E_NODE_SILENT`).
+
+`doctor` and `report` therefore ask the orchestrator first and fall back to the
+file only when it is unreachable:
+
+```
+$ messer-transcode report --last 2
+schedule  00:30-05:30 weekdays · 02:00-07:00 weekends · Europe/Copenhagen
+source    orchestrator http://127.0.0.1:8099
+```
+
+The same rule applies to writes, which are worse: see the note in
+`compose.video.yaml`.
+
 ## Stopping
 
     pm2 stop transcode-node      # or: kill -TERM <pid>
