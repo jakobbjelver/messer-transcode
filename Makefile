@@ -4,6 +4,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 IMAGE   ?= messer-transcode:dev
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.Version=$(VERSION) \
 	-X $(PKG)/internal/version.Commit=$(COMMIT) \
@@ -39,6 +40,15 @@ check: fmt-check vet test
 
 docker:
 	docker build -f deploy/Dockerfile -t $(IMAGE) .
+
+# The image the stack runs. Built here rather than pulled: GHCR publishing needs
+# a token with write:packages, and the compose entry says pull_policy: never.
+image:
+	docker buildx build --platform linux/arm64 --load \
+		--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t messer-transcode:$(VERSION) -t messer-transcode:latest \
+		-f deploy/Dockerfile .
 
 tidy:
 	go mod tidy

@@ -44,15 +44,26 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 		url = cfg.Server.URL
 	}
 	token := *serverToken
+	if token == "" && *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			say(stderr, "cannot read %s: %v\n", *tokenFile, err)
+			return ExitInvalid
+		}
+		token = strings.TrimSpace(string(b))
+	}
 	if token == "" {
 		token = cfg.Server.Token
+	}
+	if token == "" {
+		token = os.Getenv("MESSER_TRANSCODE_TOKEN")
 	}
 	if url == "" {
 		say(stderr, "no orchestrator URL: pass --server or set server.url\n")
 		return ExitUsage
 	}
 	if token == "" {
-		say(stderr, "no token: pass --token or set server.token\n")
+		say(stderr, "no token: pass --token or --token-file, or set server.token\n")
 		return ExitUsage
 	}
 
@@ -74,18 +85,6 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 				return ExitRuntime
 			}
 		}
-	}
-
-	if *serverToken == "" && *tokenFile != "" {
-		b, err := os.ReadFile(*tokenFile)
-		if err != nil {
-			say(stderr, "cannot read %s: %v\n", *tokenFile, err)
-			return ExitInvalid
-		}
-		*serverToken = strings.TrimSpace(string(b))
-	}
-	if *serverToken == "" {
-		*serverToken = os.Getenv("MESSER_TRANSCODE_TOKEN")
 	}
 
 	journal := *journalPath

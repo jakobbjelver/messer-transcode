@@ -33,6 +33,50 @@ file is claimed, so a file taken at 05:29 still has time to finish before the
 A job already running is never killed by the window closing. Throwing away an
 hour of encoding to honour a schedule is worse than finishing ten minutes late.
 
+## Deploying
+
+Two halves, deployed differently.
+
+**The orchestrator** is a container in `video-stack`, declared in
+`~/Server/compose.video.yaml` and deployed through Komodo like every other
+service. It mounts `/config` — `configs/transcode` — and nothing else. It has no
+access to the media volume, which is the point: a component that cannot touch
+the library cannot damage it.
+
+The image is built on this host, not pulled:
+
+```bash
+cd ~/Repos/messer-transcode
+make build   # the binary the node runs
+make image   # the container, tagged messer-transcode:<version>
+```
+
+`pull_policy: never` in the compose file says so explicitly. Publishing to GHCR
+needs a token with `write:packages`; until one is configured the image lives only
+on this machine, and `make image` after `make build` is the update path.
+
+**The node** runs under PM2, because VideoToolbox is not reachable from a Linux
+container:
+
+```bash
+pm2 start deploy/ecosystem.transcode.config.cjs   # first time, from the repo
+pm2 restart transcode-node                        # after make build
+pm2 logs transcode-node --lines 40 --nostream
+```
+
+**The token.** The node authenticates with a token that must not sit in
+`config.json` (committed beside it) or in the stack environment (Komodo rewrites
+`.env` from its own stack config on every deploy, and writing that array
+replaces every other variable in it). It is `/config/server.token`, mode 0600,
+gitignored, and read with `--token-file`:
+
+```bash
+openssl rand -hex 32 > ~/Server/configs/transcode/server.token
+chmod 600 ~/Server/configs/transcode/server.token
+```
+
+Rotating it means regenerating the file and restarting both halves.
+
 ## Stopping
 
     pm2 stop transcode-node      # or: kill -TERM <pid>

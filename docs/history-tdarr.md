@@ -47,7 +47,22 @@ so an original is always recoverable for `safety.keep_quarantine_days`.
 
 ## Removal
 
-The container, its compose block, its PM2 app, `configs/video/tdarr/`, its job
-reports and its transcode cache were removed in M8, after a shadow week in which
-`messer-transcode` planned the same library while Tdarr stayed idle. The archive
-of its config is kept with the other dated archives; nothing of it runs here.
+Removed 2026-11-07, the morning after the shadow run, in this order: the compose
+entry was replaced with `transcode`, the container was removed, the PM2 node
+app was deleted, and the config directory, wrapper and PM2 ecosystem file went
+with them.
+
+What was kept, and why:
+
+| what | where | why |
+|---|---|---|
+| server + node config, its database | `~/Server/archive/tdarr-2026-11-07/configs-video-tdarr.tar.gz` (381 MB) | the `database.db` inside it is the baseline every Tdarr-vs-new comparison in `docs/plan-diff.md` refers to |
+| 11 months of job reports | `~/Server/archive/tdarr-2026-11-07/jobreports.tar.gz` (8.4 GB → ~850 MB) | 2,951 failures are the evidence for why it went; deleting them would make the claim untestable |
+| the transcode cache | deleted | 53 GB of rebuildable scratch on the fast volume |
+
+One directory survived `rm -rf`: `node/.staging/update_Tdarr_Node/toDelete/`,
+324 MB of files its auto-updater had marked for deletion and which neither the
+host user nor root inside a container could remove. Moved to `/tmp`, where the
+system clears it. A file that refuses deletion is a fitting last trace of a tool
+whose updates broke it.
+
