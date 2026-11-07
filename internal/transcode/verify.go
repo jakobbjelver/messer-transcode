@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/jakobbjelver/messer-transcode/internal/ffmpeg"
 	"github.com/jakobbjelver/messer-transcode/internal/media"
@@ -104,9 +105,7 @@ func Verify(ctx context.Context, src media.Probe, out string, rules VerifyRules)
 	// windows would fail films that are perfectly fine.
 	if rules.VerifyVMAF && rules.RefPath != "" && rules.ExpectedVMAF > 0 {
 		window := float64(rules.SampleSeconds)
-		var scores []float64
-		var worstMin float64 = 101
-		var measureErr error
+		starts := make([]float64, 0, 2)
 		for _, frac := range []float64{0.40, 0.70} {
 			start := got.DurationS * frac
 			if start+window > got.DurationS {
@@ -115,14 +114,40 @@ func Verify(ctx context.Context, src media.Probe, out string, rules VerifyRules)
 			if start < 0 {
 				start = 0
 			}
-			score, err := ffmpeg.VMAFWindow(ctx, rules.RefPath, start, out, start, window)
-			if err != nil {
-				measureErr = err
+			starts = append(starts, start)
+		}
+
+		// The windows are independent measurements of the same encode, so they
+		// run together. Sequentially this was eleven seconds of the media engine
+		// sitting idle between files, which is most of the idle time the lanes
+		// are meant to remove.
+		type sample struct {
+			score ffmpeg.VMAFResult
+			err   error
+		}
+		results := make([]sample, len(starts))
+		var wg sync.WaitGroup
+		for i, start := range starts {
+			wg.Add(1)
+			go func(i int, start float64) {
+				defer wg.Done()
+				score, err := ffmpeg.VMAFWindow(ctx, rules.RefPath, start, out, start, window)
+				results[i] = sample{score: score, err: err}
+			}(i, start)
+		}
+		wg.Wait()
+
+		var scores []float64
+		var worstMin float64 = 101
+		var measureErr error
+		for _, r := range results {
+			if r.err != nil {
+				measureErr = r.err
 				break
 			}
-			scores = append(scores, score.Mean)
-			if score.Min < worstMin {
-				worstMin = score.Min
+			scores = append(scores, r.score.Mean)
+			if r.score.Min < worstMin {
+				worstMin = r.score.Min
 			}
 		}
 		switch {

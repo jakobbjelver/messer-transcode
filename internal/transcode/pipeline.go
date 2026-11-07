@@ -2,6 +2,7 @@ package transcode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,6 +73,27 @@ type Result struct {
 // original is untouched and the scratch files are garbage to be cleaned up. If
 // it dies after the quarantine step but before the rename, both copies exist.
 func Process(ctx context.Context, opts Options, t Task) (Result, error) {
+	res, commit, err := Split(ctx, opts, t)
+	if err != nil {
+		return res, err
+	}
+	if commit == nil {
+		return res, nil // dry run, or the file was refused with a verdict
+	}
+	if err := commit(ctx); err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
+// Split runs everything except the final swap and hands the swap back as a
+// function.
+//
+// The node uses this to start the next encode while the finished file is still
+// being copied back to the library: that copy is thirty-odd seconds of I/O that
+// has no business blocking the media engine. Anyone who does not call the
+// returned function leaves the original untouched.
+func Split(ctx context.Context, opts Options, t Task) (Result, func(context.Context) error, error) {
 	cfg := opts.Config
 	logf := opts.Log
 	if logf == nil {
@@ -85,11 +107,11 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	}
 
 	if _, err := os.Stat(t.Path); err != nil {
-		return res, abort(opts, t, "E_SOURCE_MISSING", err.Error())
+		return res, nil, abort(opts, t, "E_SOURCE_MISSING", err.Error())
 	}
 	before, err := Stat(t.Path)
 	if err != nil {
-		return res, abort(opts, t, "E_SOURCE_MISSING", err.Error())
+		return res, nil, abort(opts, t, "E_SOURCE_MISSING", err.Error())
 	}
 	res.BytesBefore = before
 
@@ -97,40 +119,38 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	// Locks live in their own directory so they never look like scratch data.
 	unlock, err := LockFile(filepath.Join(cfg.Paths.Scratch, "locks", fmt.Sprintf("%d.lock", t.ID)))
 	if err != nil {
-		return res, abort(opts, t, "E_LOCKED", err.Error())
+		return res, nil, abort(opts, t, "E_LOCKED", err.Error())
 	}
 	defer unlock()
 
 	if err := ensureSpace(cfg, filepath.Dir(t.Path)); err != nil {
-		return res, abort(opts, t, "E_DISK_LOW", err.Error())
+		return res, nil, abort(opts, t, "E_DISK_LOW", err.Error())
 	}
 
 	// Ingest: copy to fast storage first, and prove the copy is complete. This
 	// also turns "the file is unreadable" into a cheap failure instead of an
 	// expensive one twenty minutes into an encode.
-	src := filepath.Join(cfg.Paths.Scratch, fmt.Sprintf("%d.src.mkv", t.ID))
-	emit("ingest", "", "copying to scratch")
-	if err := CopyFile(t.Path, src, nil); err != nil {
-		return res, abort(opts, t, "E_SOURCE_MISSING", "ingest: "+err.Error())
+	src, _, err := EnsureSource(ctx, cfg, t.ID, t.Path, func(stage, msg string) { emit(stage, "", msg) })
+	if err != nil {
+		var se *StageError
+		if errors.As(err, &se) {
+			return res, nil, abort(opts, t, se.Code, se.Message)
+		}
+		return res, nil, abort(opts, t, "E_SOURCE_MISSING", err.Error())
 	}
 	defer func() { _ = os.Remove(src) }()
-
-	same, err := SameSize(t.Path, src)
-	if err != nil || !same {
-		return res, abort(opts, t, "E_SOURCE_CHANGED", "ingested copy does not match the source size")
-	}
 
 	// Probe the copy, not the original: these are the facts the encoder acts on.
 	probe, err := ffmpeg.Probe(ctx, src)
 	if err != nil {
-		return res, abort(opts, t, "E_PROBE_FFPROBE", err.Error())
+		return res, nil, abort(opts, t, "E_PROBE_FFPROBE", err.Error())
 	}
 
 	streams := planner.SelectStreams(probe, cfg, "")
 	if len(streams.Audio) == 0 {
 		// Refuse to produce a film with no audio. This is the safety valve that
 		// keeps a language-policy bug from silently stripping every track.
-		return res, abort(opts, t, "E_NO_AUDIO_SELECTED",
+		return res, nil, abort(opts, t, "E_NO_AUDIO_SELECTED",
 			"audio policy selected no tracks; check audio.keep_languages")
 	}
 
@@ -146,9 +166,14 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	}
 	spec.Subs = streams.Subs
 
-	out := filepath.Join(cfg.Paths.Scratch, fmt.Sprintf("%d.out.mkv", t.ID))
+	out := OutputPath(cfg, t.ID)
 	spec.Dst = out
-	defer func() { _ = os.Remove(out) }()
+	keepOutput := false
+	defer func() {
+		if !keepOutput {
+			_ = os.Remove(out)
+		}
+	}()
 
 	band := RatioBand{Min: cfg.Safety.SizeRatioMin, Max: cfg.Safety.SizeRatioMax}
 	if t.Decision == "remux" {
@@ -241,14 +266,14 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 			_ = opts.Reporter.SetProgress(ctx, t.ID, fraction, speed)
 		})
 		if runErr != nil {
-			return res, abort(opts, t, "E_ENCODE_FFMPEG", runErr.Error())
+			return res, nil, abort(opts, t, "E_ENCODE_FFMPEG", runErr.Error())
 		}
 		if info, statErr := os.Stat(out); statErr != nil || info.Size() == 0 {
 			detail := "ffmpeg exited cleanly but wrote nothing"
 			if tailText := strings.TrimSpace(encodeTail); tailText != "" {
 				detail += ": " + tailText
 			}
-			return res, abort(opts, t, "E_ENCODE_NO_OUTPUT", detail)
+			return res, nil, abort(opts, t, "E_ENCODE_NO_OUTPUT", detail)
 		}
 		res.BytesAfter = mustSize(out)
 		_ = opts.Reporter.SetProgress(ctx, t.ID, 1, prog.speed)
@@ -268,7 +293,7 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 			RefPath:            t.Path,
 		})
 		if err != nil {
-			return res, abort(opts, t, "E_VERIFY_DECODE", err.Error())
+			return res, nil, abort(opts, t, "E_VERIFY_DECODE", err.Error())
 		}
 		if verdict.OK {
 			break
@@ -277,7 +302,7 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 		// failure and retrying it unchanged would just burn the same time again.
 		if verdict.Code != "E_VERIFY_VMAF" {
 			res.Verdict = verdict
-			return res, abort(opts, t, verdict.Code, verdict.Detail)
+			return res, nil, abort(opts, t, verdict.Code, verdict.Detail)
 		}
 		if attempt == len(targets)-1 {
 			// Even the escalated bitrate missed. That is a property of the
@@ -288,12 +313,12 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 				verdictDetail(verdict), kbps)
 			emit("skip", "R_QUALITY_FLOOR", reason)
 			_ = opts.Reporter.Event(ctx, "info", "R_QUALITY_FLOOR", t.ID, reason, "")
-			return res, opts.Reporter.Skip(ctx, t.ID, "R_QUALITY_FLOOR", reason)
+			return res, nil, opts.Reporter.Skip(ctx, t.ID, "R_QUALITY_FLOOR", reason)
 		}
 	}
 	res.Verdict = verdict
 	if !verdict.OK {
-		return res, abort(opts, t, verdict.Code, verdict.Detail)
+		return res, nil, abort(opts, t, verdict.Code, verdict.Detail)
 	}
 
 	if opts.DryRun {
@@ -301,36 +326,64 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 		// Leave it claimable: a dry run must not consume the file.
 		_ = opts.Reporter.SetState(ctx, t.ID, "planned")
 		res.Seconds = int64(time.Since(started).Seconds())
-		return res, nil
+		return res, nil, nil
 	}
 
-	// Place: copy next to the destination, then swap atomically.
+	// The swap belongs to the caller from here. keepOutput stops the deferred
+	// cleanup: without it the output would be deleted before anyone could place
+	// it, which is exactly the bug this flag exists to prevent.
+	keepOutput = true
+	res.Seconds = int64(time.Since(started).Seconds())
+	commit := func(cctx context.Context) error {
+		defer func() { _ = os.Remove(out) }()
+		return Commit(cctx, opts, t, &res, before)
+	}
+	return res, commit, nil
+}
+
+// Commit places a verified output: copy next to the destination, quarantine the
+// original, then swap atomically.
+//
+// It is separate from Split so a node can overlap it with the next encode. The
+// safety property travels with it: the original is only touched by the final
+// rename, and the quarantine step copies before anything moves.
+func Commit(ctx context.Context, opts Options, t Task, res *Result, before int64) error {
+	cfg := opts.Config
+	logf := opts.Log
+	if logf == nil {
+		logf = func(Event) {}
+	}
+	emit := func(stage, code, msg string) {
+		logf(Event{FileID: t.ID, Path: t.Path, Stage: stage, Code: code, Message: msg})
+	}
+
+	out := OutputPath(cfg, t.ID)
 	_ = opts.Reporter.SetState(ctx, t.ID, "replacing")
+
 	dir := filepath.Dir(t.Path)
 	tmp := filepath.Join(dir, fmt.Sprintf(".messer-%d.tmp", t.ID))
 	defer func() { _ = os.Remove(tmp) }()
 	if err := CopyFile(out, tmp, nil); err != nil {
-		return res, abort(opts, t, "E_REPLACE_COPY", err.Error())
+		return abort(opts, t, "E_REPLACE_COPY", err.Error())
 	}
 
 	q, err := Quarantine(t.Path, t.LibraryRoot, cfg.Paths.Quarantine, time.Now())
 	if err != nil {
-		return res, abort(opts, t, "E_QUARANTINE", err.Error())
+		return abort(opts, t, "E_QUARANTINE", err.Error())
 	}
 	res.Quarantine = q
 	emit("replace", "", "original quarantined at "+q)
 
 	if err := Replace(tmp, t.Path); err != nil {
-		return res, abort(opts, t, "E_REPLACE_RENAME",
+		return abort(opts, t, "E_REPLACE_RENAME",
 			fmt.Sprintf("%v (the original is safe at %s)", err, q))
 	}
 
-	if err := opts.Reporter.Finish(ctx, t.ID, before, res.BytesAfter, verdict.VMAF); err != nil {
-		return res, err
+	if err := opts.Reporter.Finish(ctx, t.ID, before, res.BytesAfter, res.Verdict.VMAF); err != nil {
+		return err
 	}
-	res.Seconds = int64(time.Since(started).Seconds())
 	emit("done", "", fmt.Sprintf("%s → %s", humanSize(before), humanSize(res.BytesAfter)))
-	return res, nil
+	return nil
 }
 
 // abort records the failure and leaves the file retryable until it runs out of

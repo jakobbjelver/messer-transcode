@@ -94,12 +94,30 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	for _, lib := range cfg.Libraries {
 		roots[lib.Name] = lib.Root
 	}
-	agent.Process = func(ctx context.Context, job store.Work) error {
+	libraryFor := func(job store.Work) (string, error) {
 		root := roots[job.Library]
 		if root == "" {
-			return fmt.Errorf("library %q is not configured on this node", job.Library)
+			return "", fmt.Errorf("library %q is not configured on this node", job.Library)
 		}
-		_, err := transcode.Process(ctx, transcode.Options{
+		return root, nil
+	}
+
+	// Ingest is separate from Encode so the prefetcher can stage the next file
+	// while this one is being encoded.
+	agent.Ingest = func(ctx context.Context, job store.Work) error {
+		logf := func(stage, msg string) {
+			logEvent(transcode.Event{FileID: job.ID, Path: job.Path, Stage: stage, Message: msg})
+		}
+		_, _, err := transcode.EnsureSource(ctx, cfg, job.ID, job.Path, logf)
+		return err
+	}
+
+	agent.Encode = func(ctx context.Context, job store.Work) (func(context.Context) error, error) {
+		root, err := libraryFor(job)
+		if err != nil {
+			return nil, err
+		}
+		_, commit, err := transcode.Split(ctx, transcode.Options{
 			Config:   cfg,
 			Reporter: client,
 			Log:      logEvent,
@@ -110,7 +128,21 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 			Decision:    job.Decision,
 			TargetKbps:  job.TargetKbps,
 		})
-		return err
+		return commit, err
+	}
+
+	// Refuse to start a file there is no room for: a full scratch disk turns
+	// into a failed encode and a spent attempt otherwise.
+	agent.DiskGuard = func() error {
+		free, err := transcode.FreeGB(cfg.Paths.Scratch)
+		if err != nil {
+			return err
+		}
+		if free < float64(cfg.Safety.MinFreeGB) {
+			return fmt.Errorf("scratch has %.0f GB free, %d GB required",
+				free, cfg.Safety.MinFreeGB)
+		}
+		return nil
 	}
 
 	// One signal means "finish this file and stop". A cancelled context stops
