@@ -122,6 +122,7 @@ type SummaryRow struct {
 	Reason     string `json:"reason"`
 	State      string `json:"state"`
 	Codec      string `json:"codec"`
+	Width      int    `json:"width"`
 	Height     int    `json:"height"`
 	Bitrate    int    `json:"bitrate_kbps"`
 	Target     int    `json:"target_kbps"`
@@ -132,7 +133,7 @@ type SummaryRow struct {
 func (s *Store) Queue(ctx context.Context, state, decision string, limit, offset int) ([]SummaryRow, error) {
 	query := `
 SELECT id, path, library, COALESCE(decision,''), COALESCE(reason_code,''), COALESCE(reason,''),
-       state, COALESCE(video_codec,''), COALESCE(height,0), COALESCE(bitrate_kbps,0),
+       state, COALESCE(video_codec,''), COALESCE(width,0), COALESCE(height,0), COALESCE(bitrate_kbps,0),
        COALESCE(target_kbps,0), size_bytes
 FROM files
 WHERE (? = '' OR state = ?) AND (? = '' OR decision = ?)
@@ -151,7 +152,7 @@ LIMIT ? OFFSET ?`
 	for rows.Next() {
 		var r SummaryRow
 		if err := rows.Scan(&r.ID, &r.Path, &r.Library, &r.Decision, &r.ReasonCode, &r.Reason,
-			&r.State, &r.Codec, &r.Height, &r.Bitrate, &r.Target, &r.SizeBytes); err != nil {
+			&r.State, &r.Codec, &r.Width, &r.Height, &r.Bitrate, &r.Target, &r.SizeBytes); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -179,14 +180,14 @@ func (s *Store) File(ctx context.Context, id int64) (FileDetail, error) {
 	var lastErrCode string
 	err := s.db.QueryRowContext(ctx, `
 SELECT id, path, library, COALESCE(decision,''), COALESCE(reason_code,''), COALESCE(reason,''),
-       state, COALESCE(video_codec,''), COALESCE(height,0), COALESCE(bitrate_kbps,0),
+       state, COALESCE(video_codec,''), COALESCE(width,0), COALESCE(height,0), COALESCE(bitrate_kbps,0),
        COALESCE(target_kbps,0), size_bytes, COALESCE(duration_s,0),
        COALESCE(bytes_before,0), COALESCE(bytes_after,0), COALESCE(vmaf,0), attempts,
        COALESCE(last_error,''), COALESCE(last_error_code,''), COALESCE(updated_at,0),
        COALESCE(audio_tracks,''), COALESCE(sub_tracks,'')
 FROM files WHERE id = ?`, id).Scan(
 		&d.ID, &d.Path, &d.Library, &d.Decision, &d.ReasonCode, &d.Reason,
-		&d.State, &d.Codec, &d.Height, &d.Bitrate, &d.Target, &d.SizeBytes, &d.DurationS,
+		&d.State, &d.Codec, &d.Width, &d.Height, &d.Bitrate, &d.Target, &d.SizeBytes, &d.DurationS,
 		&d.BytesBefore, &d.BytesAfter, &d.VMAF, &d.Attempts,
 		&d.LastError, &lastErrCode, &d.LastErrorAt, &d.AudioTracks, &d.SubTracks)
 	if err != nil {

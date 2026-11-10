@@ -55,14 +55,14 @@ func Decide(cfg *config.Config, f media.Facts) Verdict {
 		}
 		v := Verdict{Decision: rule.Do, Code: rule.Code}
 		if rule.Do == "encode" {
-			kbps, ok := TargetKbps(cfg, f.Codec, f.Height)
+			kbps, ok := TargetKbps(cfg, f.Codec, NominalHeight(f.Width, f.Height))
 			if !ok {
 				// Config validation should make this unreachable; refuse to
 				// guess a bitrate rather than silently pick one.
 				return Verdict{
 					Decision: "skip",
 					Code:     "R_NO_TARGET",
-					Reason:   fmt.Sprintf("%s at %d kbps has no ladder row for %dpx", codecName(f.Codec), f.BitrateKbps, f.Height),
+					Reason:   fmt.Sprintf("%s at %d kbps has no ladder row for %dpx", codecName(f.Codec), f.BitrateKbps, NominalHeight(f.Width, f.Height)),
 				}
 			}
 			// Two guards keep the planner from spending an hour to make a file
@@ -136,11 +136,33 @@ func anyCodec(want, have []string) bool {
 	return false
 }
 
+// NominalHeight maps a frame to the ladder class it was mastered for.
+//
+// Height alone is not a resolution. A 2.39:1 film at 1920×800 is a 1080p
+// master with a letterbox, and a ladder that prices it by its 800 lines would
+// encode it at the 720p rung — 2,700 kbps for 1920-wide picture — and then fail
+// its own quality check. Width says which format the source came from; height
+// only says how much of the frame is picture.
+func NominalHeight(width, height int) int {
+	switch {
+	case width >= 2560:
+		return 2160
+	case width >= 1700:
+		return 1080
+	case width >= 1100:
+		return 720
+	default:
+		// SD, or a probe with no width: the real height is the best rung hint
+		// there is, and the bottom row of the ladder catches everything.
+		return height
+	}
+}
+
 // TargetKbps picks the first ladder row for the codec whose threshold the
-// height clears. Rows are ordered most-specific-first by validation.
-func TargetKbps(cfg *config.Config, codec string, height int) (int, bool) {
+// class clears. Rows are ordered most-specific-first by validation.
+func TargetKbps(cfg *config.Config, codec string, classHeight int) (int, bool) {
 	for _, row := range cfg.Quality.Table {
-		if row.Codec == codec && height >= row.HeightGTE {
+		if row.Codec == codec && classHeight >= row.HeightGTE {
 			return row.Kbps, true
 		}
 	}
@@ -150,9 +172,9 @@ func TargetKbps(cfg *config.Config, codec string, height int) (int, bool) {
 // ExpectedVMAF is the quality a ladder rung promises, from calibration.
 // Zero means the rung was never measured, and verification will not pretend
 // otherwise — an unmeasured rung gets no quality assertion.
-func ExpectedVMAF(cfg *config.Config, codec string, height int) float64 {
+func ExpectedVMAF(cfg *config.Config, codec string, classHeight int) float64 {
 	for _, row := range cfg.Quality.Table {
-		if row.Codec == codec && height >= row.HeightGTE {
+		if row.Codec == codec && classHeight >= row.HeightGTE {
 			if row.ExpectedVMAF != nil {
 				return *row.ExpectedVMAF
 			}
