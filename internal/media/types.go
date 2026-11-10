@@ -50,15 +50,30 @@ type Probe struct {
 }
 
 // Facts are the fields a decision rule can read.
+//
+// Audio is here because a remux is only worth its I/O when the audio policy
+// actually changes something: rewriting a 5 GB file to strip two subtitle
+// tracks saves nothing, while turning DTS into EAC3 is what makes it play.
 type Facts struct {
 	Height      int
 	Codec       string
 	BitrateKbps int
+	AudioTracks int
+	AudioCodecs []string // lowercased, in file order
 }
 
 // Facts projects a probe down to what the rules engine needs.
 func (p Probe) Facts() Facts {
-	return Facts{Height: p.Height, Codec: p.VideoCodec, BitrateKbps: p.BitrateKbps}
+	f := Facts{
+		Height:      p.Height,
+		Codec:       p.VideoCodec,
+		BitrateKbps: p.BitrateKbps,
+		AudioTracks: len(p.Audio),
+	}
+	for _, a := range p.Audio {
+		f.AudioCodecs = append(f.AudioCodecs, strings.ToLower(a.Codec))
+	}
+	return f
 }
 
 // IsCommentary reports whether a free-text track title marks commentary.

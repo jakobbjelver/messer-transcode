@@ -136,13 +136,22 @@ Two guards run after a rule says `encode`:
 ```json
 { "min_free_gb": 150, "size_ratio_min": 0.35, "size_ratio_max": 0.98,
   "duration_tolerance_s": 2, "keep_quarantine_days": 14,
-  "verify_sample_seconds": 60, "verify_vmaf": true, "max_attempts": 3 }
+  "verify_sample_seconds": 60, "verify_vmaf": true, "max_attempts": 3,
+  "quarantine": "copy" }
 ```
 
 `min_free_gb` is the floor on both volumes before a job may start. `size_ratio_*` rejects an
 output that is implausibly small or large. `duration_tolerance_s` rejects a truncation.
 `verify_vmaf` turns on the quality check. `max_attempts` bounds retries before a file is marked
 failed.
+
+`quarantine` is `"copy"` (default when the key is absent) or `"off"`. `copy` preserves every
+replaced original in `paths.quarantine/<date>/` for `keep_quarantine_days`. `off` skips the copy:
+the swap is still one rename inside the destination directory, so a crash before it leaves the
+original untouched, but once it succeeds the replaced bytes are gone. Turn it off when the copy's
+I/O is the constraint — it is a full read and write of every replaced file, which on a USB library
+is the largest consumer of the fast volume. `keep_quarantine_days` still governs directories that
+already exist, so the backlog drains normally after switching.
 
 ## `notify`
 
@@ -155,8 +164,10 @@ Every decision carries a stable code, which is what the UI, the API and any agen
 
 | Code | Decision | Meaning |
 |---|---|---|
-| `R_LOW_RES` | remux | Below 1080p: not worth re-encoding |
-| `R_HEVC_EFFICIENT` | remux | HEVC and already under the efficiency threshold |
+| `R_LOW_RES_KEEP` | skip | Below 1080p: not worth re-encoding, and not worth a remux either |
+| `R_LOW_RES_AUDIO` | remux | Below 1080p but carrying lossless/DTS audio the policy would change |
+| `R_AUDIO_NEEDS_EAC3` | remux | Lossless or DTS audio; the video is already efficient |
+| `R_TOO_MANY_TRACKS` | remux | More audio streams than the track policy keeps |
 | `R_HEVC_OVERBITRATE` | encode | HEVC but spending more bits than the ladder allows |
 | `R_H264_ENCODE` | encode | H.264 above the threshold |
 | `R_H264_LOW_BITRATE` | encode | H.264 below the threshold but still worth converting |
@@ -164,3 +175,8 @@ Every decision carries a stable code, which is what the UI, the API and any agen
 | `R_LOW_SAVING` | skip | Projected saving is under the floor |
 | `R_NO_TARGET` | skip | No ladder row for this codec and height |
 | `R_NO_RULE` | skip | Nothing matched (the default rule) |
+
+A remux rewrites the file with the same video stream: it is only worth its I/O when the audio or
+subtitle policy actually changes something. The measured case for the old blanket rules: 1,929
+files and 5.7 TB of rewriting to recover 96 GB, of which 1,915 had audio the policy would leave
+untouched.

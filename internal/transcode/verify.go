@@ -4,6 +4,7 @@ package transcode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -187,6 +188,41 @@ func Verify(ctx context.Context, src media.Probe, out string, rules VerifyRules)
 	return v, nil
 }
 
+// muxerDTSNoise is the one stderr line ffmpeg writes on a healthy file.
+//
+// When a source carries PTS equal to DTS, the null muxer refuses a timestamp
+// that does not increase and says so once per packet — while the decode
+// succeeds and ffmpeg exits 0. Treating "stderr is not empty" as "the decode
+// failed" parked ten healthy titles after three encodes each (2026-11-08..10).
+const muxerDTSNoise = "non monotonically increasing dts to muxer"
+
+// decodeVerdict turns one ffmpeg run into pass or fail.
+//
+// The exit code is the verdict. Stderr is evidence: the known timestamp noise
+// is dropped, and any other error line — even at exit 0 — is still a failure,
+// because we have no evidence about what else can appear there.
+func decodeVerdict(runErr error, stderr string) error {
+	msg := strings.TrimSpace(stderr)
+	var real []string
+	for _, line := range strings.Split(msg, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Contains(line, muxerDTSNoise) {
+			continue
+		}
+		real = append(real, line)
+	}
+	if runErr != nil {
+		if len(real) > 0 {
+			return fmt.Errorf("%v: %s", runErr, strings.Join(real, " | "))
+		}
+		return runErr
+	}
+	if len(real) > 0 {
+		return errors.New(strings.Join(real, " | "))
+	}
+	return nil
+}
+
 // verifyDecode decodes a few short windows to /dev/null.
 func verifyDecode(ctx context.Context, path string, duration float64, window int) error {
 	if duration <= 0 {
@@ -217,11 +253,8 @@ func verifyDecode(ctx context.Context, path string, duration float64, window int
 		cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 		var stderr strings.Builder
 		cmd.Stderr = &stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("window at %.0fs: %s", start, strings.TrimSpace(stderr.String()))
-		}
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return fmt.Errorf("window at %.0fs: %s", start, msg)
+		if v := decodeVerdict(cmd.Run(), stderr.String()); v != nil {
+			return fmt.Errorf("window at %.0fs: %w", start, v)
 		}
 	}
 	return nil
@@ -234,10 +267,7 @@ func DecodeFully(ctx context.Context, path string) error {
 		"-i", path, "-f", "null", "-")
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
-	}
-	return nil
+	return decodeVerdict(cmd.Run(), stderr.String())
 }
 
 func errorText(err error) string {

@@ -142,7 +142,14 @@ type Condition struct {
 	Codec      string `json:"codec,omitempty"`
 	BitrateLT  *int   `json:"bitrate_kbps_lt,omitempty"`
 	BitrateGTE *int   `json:"bitrate_kbps_gte,omitempty"`
-	Default    bool   `json:"default,omitempty"`
+	// AudioCodecIn matches when any audio track uses one of these codecs. It is
+	// how the rule list says "this file needs its audio fixed" without naming
+	// a video property it does not care about.
+	AudioCodecIn []string `json:"audio_codec_in,omitempty"`
+	// AudioTracksGT matches when the file has more than this many audio
+	// streams — the point where the track policy starts dropping some.
+	AudioTracksGT *int `json:"audio_tracks_gt,omitempty"`
+	Default       bool `json:"default,omitempty"`
 }
 
 // Safety holds the invariants that keep a bad decision from costing data.
@@ -155,7 +162,18 @@ type Safety struct {
 	VerifySampleSec    int     `json:"verify_sample_seconds"`
 	VerifyVMAF         bool    `json:"verify_vmaf"`
 	MaxAttempts        int     `json:"max_attempts"`
+	// Quarantine is "copy" (the default, and what an absent key means) or
+	// "off". Off skips the copy that preserves the original: the swap is still
+	// a single rename, but the bytes that were replaced are gone. It exists
+	// because the copy costs a full read and write of every file, which on a
+	// library this size is the largest consumer of the fast volume.
+	Quarantine string `json:"quarantine,omitempty"`
 }
+
+// QuarantineEnabled reports whether the original is copied before the swap.
+// An absent value means copy: losing the safety net has to be explicit, and a
+// Go zero value must never be able to turn it off by accident.
+func (s Safety) QuarantineEnabled() bool { return s.Quarantine != "off" }
 
 // Notify calls out to the *arr stack after a successful replacement.
 type Notify struct {

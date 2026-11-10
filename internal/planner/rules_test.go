@@ -43,9 +43,9 @@ func TestDecide(t *testing.T) {
 			want:  "skip", code: "R_LOW_SAVING",
 		},
 		{
-			name:  "efficient HEVC is only remuxed",
-			facts: media.Facts{Height: 1080, Codec: "hevc", BitrateKbps: 4800},
-			want:  "remux", code: "R_HEVC_EFFICIENT",
+			name:  "efficient HEVC with clean audio is left alone",
+			facts: media.Facts{Height: 1080, Codec: "hevc", BitrateKbps: 4800, AudioTracks: 1, AudioCodecs: []string{"eac3"}},
+			want:  "skip", code: "R_NO_RULE",
 		},
 		{
 			name:  "over-bitrate HEVC is re-encoded",
@@ -58,9 +58,14 @@ func TestDecide(t *testing.T) {
 			want:  "skip", code: "R_NO_RULE",
 		},
 		{
-			name:  "720p is never worth re-encoding",
-			facts: media.Facts{Height: 720, Codec: "h264", BitrateKbps: 20000},
-			want:  "remux", code: "R_LOW_RES",
+			name:  "720p is never re-encoded, and no longer remuxed for nothing",
+			facts: media.Facts{Height: 720, Codec: "h264", BitrateKbps: 20000, AudioTracks: 1, AudioCodecs: []string{"ac3"}},
+			want:  "skip", code: "R_LOW_RES_KEEP",
+		},
+		{
+			name:  "720p with DTS audio is remuxed for the audio alone",
+			facts: media.Facts{Height: 720, Codec: "h264", BitrateKbps: 20000, AudioTracks: 2, AudioCodecs: []string{"dts", "ac3"}},
+			want:  "remux", code: "R_LOW_RES_AUDIO",
 		},
 		{
 			name:  "4K picks the 4K rung, not the 1080p one",
