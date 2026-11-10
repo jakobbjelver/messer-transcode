@@ -116,7 +116,7 @@ func agentFor(t *testing.T, f *fakeServer, journalDir string) (*Agent, *Client) 
 	a.Ingest = func(context.Context, store.Work) error { return nil }
 	a.Encode = func(ctx context.Context, job store.Work) (func(context.Context) error, error) {
 		return func(c context.Context) error {
-			return client.Finish(c, job.ID, 1000, 700, 93.4)
+			return client.Finish(c, job.ID, 1000, 700, 93.4, nil)
 		}, nil
 	}
 	return a, client
@@ -136,7 +136,7 @@ func TestAgentClaimsProcessesAndReports(t *testing.T) {
 			return nil, err
 		}
 		return func(c context.Context) error {
-			return client.Finish(c, job.ID, 1000, 700, 93.4)
+			return client.Finish(c, job.ID, 1000, 700, 93.4, nil)
 		}, nil
 	}
 
@@ -231,7 +231,7 @@ func TestCancelDoesNotInterruptRunningJob(t *testing.T) {
 		}
 		return func(c context.Context) error {
 			finished <- nil
-			return client.Finish(c, job.ID, 1000, 700, 95)
+			return client.Finish(c, job.ID, 1000, 700, 95, nil)
 		}, nil
 	}
 
@@ -275,7 +275,7 @@ func TestEgressRunsOffTheEncodePathAndDrains(t *testing.T) {
 		return func(c context.Context) error {
 			time.Sleep(50 * time.Millisecond) // a stand-in for the copy
 			placed.Store(job.ID, true)
-			return client.Finish(c, job.ID, 1000, 700, 94)
+			return client.Finish(c, job.ID, 1000, 700, 94, nil)
 		}, nil
 	}
 
@@ -337,7 +337,7 @@ func TestPrefetchStagesAhead(t *testing.T) {
 		}
 		time.Sleep(80 * time.Millisecond)
 		return func(c context.Context) error {
-			return client.Finish(c, job.ID, 1000, 700, 94)
+			return client.Finish(c, job.ID, 1000, 700, 94, nil)
 		}, nil
 	}
 

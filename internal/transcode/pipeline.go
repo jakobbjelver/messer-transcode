@@ -33,7 +33,7 @@ type Reporter interface {
 	SetProgress(ctx context.Context, id int64, fraction, speed float64) error
 	Event(ctx context.Context, level, code string, fileID int64, message, data string) error
 	Skip(ctx context.Context, id int64, code, reason string) error
-	Finish(ctx context.Context, id int64, before, after int64, vmaf float64) error
+	Finish(ctx context.Context, id int64, before, after int64, vmaf float64, out *media.OutputFacts) error
 	Fail(ctx context.Context, id int64, code, detail string, maxAttempts int) (state string, err error)
 }
 
@@ -390,11 +390,28 @@ func Commit(ctx context.Context, opts Options, t Task, res *Result, before int64
 		return abort(opts, t, "E_REPLACE_RENAME", detail)
 	}
 
-	if err := opts.Reporter.Finish(ctx, t.ID, before, res.BytesAfter, res.Verdict.VMAF); err != nil {
+	if err := opts.Reporter.Finish(ctx, t.ID, before, res.BytesAfter, res.Verdict.VMAF, outputFacts(t.Path, res.Verdict.Probe)); err != nil {
 		return err
 	}
 	emit("done", "", fmt.Sprintf("%s → %s", humanSize(before), humanSize(res.BytesAfter)))
 	return nil
+}
+
+// outputFacts describes the file that is now on disk, for the row that has to
+// keep describing it.
+//
+// The mtime comes from the filesystem, not from the probe: the probe was taken
+// from the scratch copy during verification, and the library's copy is a
+// different file with its own times. If the size is missing, the stat fills it.
+func outputFacts(path string, p media.Probe) *media.OutputFacts {
+	out := media.OutputFacts{Probe: p}
+	if fi, err := os.Stat(path); err == nil {
+		out.MtimeNS = fi.ModTime().UnixNano()
+		if out.Probe.SizeBytes == 0 {
+			out.Probe.SizeBytes = fi.Size()
+		}
+	}
+	return &out
 }
 
 // abort records the failure and leaves the file retryable until it runs out of

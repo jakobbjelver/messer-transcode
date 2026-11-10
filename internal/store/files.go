@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -51,20 +52,28 @@ ON CONFLICT(path) DO UPDATE SET
 
 	now := time.Now().Unix()
 	for _, f := range files {
-		res, err := stmt.ExecContext(ctx, f.Path, library, f.Size, f.MtimeNS, now)
-		if err != nil {
+		// SQLite reports an insert and an update as one affected row, so the
+		// counters have to come from the row that was there before. One indexed
+		// lookup per file inside the scan's transaction is cheap next to the
+		// stat that produced it, and the alternative was a counter that lied.
+		var oldSize, oldMtime int64
+		exists := true
+		err := tx.QueryRowContext(ctx,
+			`SELECT size_bytes, mtime_ns FROM files WHERE path = ?`, f.Path).
+			Scan(&oldSize, &oldMtime)
+		if errors.Is(err, sql.ErrNoRows) {
+			exists = false
+		} else if err != nil {
+			return inserted, changed, fmt.Errorf("lookup %s: %w", f.Path, err)
+		}
+
+		if _, err := stmt.ExecContext(ctx, f.Path, library, f.Size, f.MtimeNS, now); err != nil {
 			return inserted, changed, fmt.Errorf("upsert %s: %w", f.Path, err)
 		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			continue
-		}
-		switch n {
-		case 1:
-			// Either an insert or an update that actually changed values;
-			// SQLite reports both as one affected row. Distinguishing them
-			// costs a second query per file, so callers get the total.
+		if !exists {
 			inserted++
+		} else if oldSize != f.Size || oldMtime != f.MtimeNS {
+			changed++
 		}
 	}
 	if err := tx.Commit(); err != nil {

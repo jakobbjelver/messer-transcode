@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jakobbjelver/messer-transcode/internal/health"
+	"github.com/jakobbjelver/messer-transcode/internal/media"
 	"github.com/jakobbjelver/messer-transcode/internal/report"
 	"github.com/jakobbjelver/messer-transcode/internal/store"
 	"github.com/jakobbjelver/messer-transcode/internal/version"
@@ -272,6 +273,11 @@ func (s *Server) nodeState(w http.ResponseWriter, r *http.Request) {
 		BytesBefore int64   `json:"bytes_before"`
 		BytesAfter  int64   `json:"bytes_after"`
 		VMAF        float64 `json:"vmaf"`
+		// Probe is what the verifier measured on the file that is now in the
+		// library, and MtimeNS is its filesystem timestamp. Without them the row
+		// keeps describing the replaced file and the next scan re-queues it.
+		Probe   *media.Probe `json:"probe"`
+		MtimeNS int64        `json:"mtime_ns"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.fail(w, http.StatusBadRequest, "E_BAD_BODY", err.Error())
@@ -284,7 +290,11 @@ func (s *Server) nodeState(w http.ResponseWriter, r *http.Request) {
 	case "planned", "encoding", "verifying", "replacing":
 		err = s.st.SetState(ctx, id, req.State)
 	case "done":
-		err = s.st.Finish(ctx, id, req.BytesBefore, req.BytesAfter, req.VMAF)
+		var out *media.OutputFacts
+		if req.Probe != nil {
+			out = &media.OutputFacts{Probe: *req.Probe, MtimeNS: req.MtimeNS}
+		}
+		err = s.st.Finish(ctx, id, req.BytesBefore, req.BytesAfter, req.VMAF, out)
 	case "skipped":
 		err = s.st.Skip(ctx, id, req.Code, req.Detail)
 	case "failed":

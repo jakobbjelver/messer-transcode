@@ -76,6 +76,18 @@ func (p Probe) Facts() Facts {
 	return f
 }
 
+// OutputFacts describe the file that replaced an original: what the verifier
+// measured, and the mtime the filesystem gave it.
+//
+// The scanner decides whether a row's probe is still valid by comparing the
+// size and mtime it sees on disk with the ones stored on the row. A successful
+// replacement does not preserve either, so a finish that omits these makes the
+// next scan believe the file changed and re-queue the work it just did.
+type OutputFacts struct {
+	Probe   Probe
+	MtimeNS int64
+}
+
 // IsCommentary reports whether a free-text track title marks commentary.
 func IsCommentary(title string) bool {
 	return strings.Contains(strings.ToLower(title), "commentary")

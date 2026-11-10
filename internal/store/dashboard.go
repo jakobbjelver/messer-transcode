@@ -33,10 +33,10 @@ func (s *Store) Snapshot(ctx context.Context) (Dashboard, error) {
 	err := s.db.QueryRowContext(ctx, `
 SELECT COUNT(*),
        COALESCE(SUM(size_bytes),0),
-       COALESCE(SUM(CASE WHEN state='done'
+       COALESCE(SUM(CASE WHEN finished_at IS NOT NULL
                          THEN MAX(COALESCE(bytes_before,0) - COALESCE(bytes_after,0), 0)
                          ELSE 0 END),0),
-       COALESCE(SUM(CASE WHEN state='done' THEN COALESCE(bytes_after,0) ELSE 0 END),0),
+       COALESCE(SUM(CASE WHEN finished_at IS NOT NULL THEN COALESCE(bytes_after,0) ELSE 0 END),0),
        COALESCE(SUM(CASE WHEN state='failed' THEN 1 ELSE 0 END),0)
 FROM files`).Scan(&d.TotalFiles, &d.TotalBytes, &d.ReclaimedBytes, &d.DoneBytes, &d.Failures)
 	if err != nil {

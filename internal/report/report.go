@@ -158,7 +158,7 @@ SELECT COUNT(*),
        COALESCE(SUM(CASE WHEN started_at > 0 AND finished_at > started_at
                          THEN finished_at - started_at ELSE 0 END), 0)
 FROM files
-WHERE state='done' AND finished_at >= ? AND finished_at < ?`, from, to)
+WHERE finished_at IS NOT NULL AND finished_at >= ? AND finished_at < ?`, from, to)
 	if err := row.Scan(&r.Done, &r.Before, &r.After, &r.BusySeconds); err != nil {
 		return r, fmt.Errorf("run %s: %w", w.Start.Format(time.DateOnly), err)
 	}
@@ -166,13 +166,13 @@ WHERE state='done' AND finished_at >= ? AND finished_at < ?`, from, to)
 	if r.Done > 0 {
 		_ = db.QueryRowContext(ctx, `
 SELECT COUNT(*), AVG(vmaf), MIN(vmaf) FROM files
-WHERE state='done' AND vmaf > 0 AND finished_at >= ? AND finished_at < ?`,
+WHERE finished_at IS NOT NULL AND vmaf > 0 AND finished_at >= ? AND finished_at < ?`,
 			from, to).Scan(&r.VmafN, &r.VmafMean, &r.VmafMin)
 		_ = db.QueryRowContext(ctx, `
 SELECT
   COALESCE(SUM(CASE WHEN decision='remux' THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN decision='encode' THEN 1 ELSE 0 END), 0)
-FROM files WHERE state='done' AND finished_at >= ? AND finished_at < ?`, from, to).
+FROM files WHERE finished_at IS NOT NULL AND finished_at >= ? AND finished_at < ?`, from, to).
 			Scan(&r.Remuxed, &r.Encoded)
 	}
 

@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
+
+	"github.com/jakobbjelver/messer-transcode/internal/media"
 )
 
 // Work is a file the runner may pick up. The JSON tags are the wire contract
@@ -69,15 +72,45 @@ func (s *Store) SetState(ctx context.Context, id int64, state string) error {
 }
 
 // Finish records a successful replacement.
-func (s *Store) Finish(ctx context.Context, id, before, after int64, vmaf float64) error {
+func (s *Store) Finish(ctx context.Context, id, before, after int64, vmaf float64, out *media.OutputFacts) error {
 	var v any
 	if vmaf > 0 {
 		v = vmaf
 	}
-	return s.exec(ctx, `
+	now := time.Now().Unix()
+
+	// Without the output's own facts the row keeps describing the file that was
+	// replaced, and the next scan reads the change as new work. Every finish
+	// from the pipeline carries them; the fallback exists for tests and for a
+	// node too old to send them.
+	if out == nil || out.Probe.SizeBytes == 0 {
+		return s.exec(ctx, `
 UPDATE files SET state='done', bytes_before=?, bytes_after=?, vmaf=?, finished_at=?,
   last_error=NULL, last_error_code=NULL, updated_at=?
-WHERE id=?`, before, after, v, time.Now().Unix(), time.Now().Unix(), id)
+WHERE id=?`, before, after, v, now, now, id)
+	}
+
+	audio, err := json.Marshal(out.Probe.Audio)
+	if err != nil {
+		return err
+	}
+	subs, err := json.Marshal(out.Probe.Subs)
+	if err != nil {
+		return err
+	}
+	p := out.Probe
+	return s.exec(ctx, `
+UPDATE files SET state='done', bytes_before=?, bytes_after=?, vmaf=?, finished_at=?,
+  size_bytes=?, mtime_ns=?, probe_key=?,
+  container=?, video_codec=?, width=?, height=?, bitrate_kbps=?, duration_s=?, pix_fmt=?,
+  audio_tracks=?, sub_tracks=?,
+  last_error=NULL, last_error_code=NULL, updated_at=?
+WHERE id=?`,
+		before, after, v, now,
+		p.SizeBytes, out.MtimeNS, ProbeKey(p.SizeBytes, out.MtimeNS),
+		p.Container, p.VideoCodec, p.Width, p.Height, p.BitrateKbps, p.DurationS, p.PixFmt,
+		string(audio), string(subs),
+		now, id)
 }
 
 // Fail records an attempt. A file returns to "planned" until it runs out of

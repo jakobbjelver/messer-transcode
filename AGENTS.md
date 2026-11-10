@@ -44,6 +44,11 @@ make docker     # container image
 - **The quarantine is optional; the swap is not.** Replacing is one rename inside the destination
   directory whether or not a copy is kept, so a crash before the rename always leaves the original.
   `safety.quarantine: "off"` gives up only the rollback copy, never the atomicity.
+- **A finished row describes the file that is now on disk.** The finish payload carries the output's
+  probe and mtime; the scanner compares both, so omitting them makes the next scan re-queue the work
+  it just did.
+- **History is a fact, not a state.** Runs and the reclaimed ledger are counted from `finished_at`,
+  never from `state='done'`, so a later plan cannot rewrite what already happened.
 - **Measured numbers are facts** (bitrate, VMAF target, encode time). Re-measure before contradicting
   the plan; do not "improve" a measured value by intuition.
 - **Deploy is build → image → Komodo**: push builds `ghcr.io/jakobbjelver/messer-transcode`, then

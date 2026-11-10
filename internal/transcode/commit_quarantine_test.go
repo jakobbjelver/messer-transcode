@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jakobbjelver/messer-transcode/internal/config"
+	"github.com/jakobbjelver/messer-transcode/internal/media"
 )
 
 // fakeReporter satisfies Reporter without a database.
@@ -21,7 +22,7 @@ func (f *fakeReporter) Event(context.Context, string, string, int64, string, str
 	return nil
 }
 func (f *fakeReporter) Skip(context.Context, int64, string, string) error { return nil }
-func (f *fakeReporter) Finish(context.Context, int64, int64, int64, float64) error {
+func (f *fakeReporter) Finish(context.Context, int64, int64, int64, float64, *media.OutputFacts) error {
 	f.finished = true
 	return nil
 }

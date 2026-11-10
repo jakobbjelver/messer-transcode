@@ -58,14 +58,29 @@ func TestDecide(t *testing.T) {
 			want:  "skip", code: "R_NO_RULE",
 		},
 		{
-			name:  "720p is never re-encoded, and no longer remuxed for nothing",
-			facts: media.Facts{Height: 720, Codec: "h264", BitrateKbps: 20000, AudioTracks: 1, AudioCodecs: []string{"ac3"}},
-			want:  "skip", code: "R_LOW_RES_KEEP",
+			name:  "720p H.264 is re-encoded at the 720p rung",
+			facts: media.Facts{Height: 720, Codec: "h264", BitrateKbps: 9000, AudioTracks: 1, AudioCodecs: []string{"ac3"}},
+			want:  "encode", code: "R_H264_ENCODE", target: 2700,
 		},
 		{
-			name:  "720p with DTS audio is remuxed for the audio alone",
+			name:  "720p H.264 with DTS is encoded, not remuxed: the encode fixes the audio too",
 			facts: media.Facts{Height: 720, Codec: "h264", BitrateKbps: 20000, AudioTracks: 2, AudioCodecs: []string{"dts", "ac3"}},
-			want:  "remux", code: "R_LOW_RES_AUDIO",
+			want:  "encode", code: "R_H264_ENCODE", target: 2700,
+		},
+		{
+			name:  "720p HEVC with DTS is remuxed for the audio alone",
+			facts: media.Facts{Height: 720, Codec: "hevc", BitrateKbps: 4000, AudioTracks: 2, AudioCodecs: []string{"dts", "ac3"}},
+			want:  "remux", code: "R_AUDIO_NEEDS_EAC3",
+		},
+		{
+			name:  "720p H.264 already below the 720p rung is left alone",
+			facts: media.Facts{Height: 720, Codec: "h264", BitrateKbps: 2500, AudioTracks: 1, AudioCodecs: []string{"ac3"}},
+			want:  "skip", code: "R_ALREADY_LEAN",
+		},
+		{
+			name:  "480p H.264 uses the bottom rung",
+			facts: media.Facts{Height: 480, Codec: "h264", BitrateKbps: 3400, AudioTracks: 1, AudioCodecs: []string{"aac"}},
+			want:  "encode", code: "R_H264_LOW_BITRATE", target: 960,
 		},
 		{
 			name:  "4K picks the 4K rung, not the 1080p one",
