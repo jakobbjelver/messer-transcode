@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/jakobbjelver/messer-transcode/internal/config"
+	"github.com/jakobbjelver/messer-transcode/internal/media"
 	"github.com/jakobbjelver/messer-transcode/internal/quarantine"
 	"github.com/jakobbjelver/messer-transcode/internal/store"
 	"github.com/jakobbjelver/messer-transcode/internal/transcode"
@@ -165,10 +166,15 @@ func (c *Client) Skip(ctx context.Context, id int64, code, reason string) error 
 	return c.state(ctx, id, map[string]any{"state": "skipped", "code": code, "detail": reason})
 }
 
-func (c *Client) Finish(ctx context.Context, id int64, before, after int64, vmaf float64) error {
-	return c.state(ctx, id, map[string]any{
+func (c *Client) Finish(ctx context.Context, id int64, before, after int64, vmaf float64, out *media.OutputFacts) error {
+	body := map[string]any{
 		"state": "done", "bytes_before": before, "bytes_after": after, "vmaf": vmaf,
-	})
+	}
+	if out != nil {
+		body["probe"] = out.Probe
+		body["mtime_ns"] = out.MtimeNS
+	}
+	return c.state(ctx, id, body)
 }
 
 // Fail reports a failed attempt. The store decides whether the file is

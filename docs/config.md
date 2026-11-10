@@ -164,8 +164,6 @@ Every decision carries a stable code, which is what the UI, the API and any agen
 
 | Code | Decision | Meaning |
 |---|---|---|
-| `R_LOW_RES_KEEP` | skip | Below 1080p: not worth re-encoding, and not worth a remux either |
-| `R_LOW_RES_AUDIO` | remux | Below 1080p but carrying lossless/DTS audio the policy would change |
 | `R_AUDIO_NEEDS_EAC3` | remux | Lossless or DTS audio; the video is already efficient |
 | `R_TOO_MANY_TRACKS` | remux | More audio streams than the track policy keeps |
 | `R_HEVC_OVERBITRATE` | encode | HEVC but spending more bits than the ladder allows |
@@ -175,6 +173,11 @@ Every decision carries a stable code, which is what the UI, the API and any agen
 | `R_LOW_SAVING` | skip | Projected saving is under the floor |
 | `R_NO_TARGET` | skip | No ladder row for this codec and height |
 | `R_NO_RULE` | skip | Nothing matched (the default rule) |
+
+The ladder has rungs at 4K, 1080p, 720p and below, so a 720p H.264 file is re-encoded at 2,700 kbps
+rather than left alone: the height is already accounted for by the rung it picks. HEVC below 1080p
+has no encode rule and falls to the default skip, because a low-bitrate HEVC file is already the
+thing an encode would try to produce.
 
 A remux rewrites the file with the same video stream: it is only worth its I/O when the audio or
 subtitle policy actually changes something. The measured case for the old blanket rules: 1,929
