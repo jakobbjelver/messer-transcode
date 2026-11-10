@@ -29,6 +29,8 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	name := fs.String("name", "", "node name for the logs (default: hostname)")
 	journalPath := fs.String("journal", "", "crash journal (default: <config dir>/node.journal)")
 	once := fs.Bool("once", false, "claim and process one file, then exit")
+	retryFor := fs.Duration("report-retry", 0,
+		"how long a final report waits out an orchestrator that is down (default 90s)")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
@@ -93,6 +95,9 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	}
 
 	client := node.NewClient(url, token, nodeID)
+	if *retryFor > 0 {
+		client.RetryFor = *retryFor
+	}
 
 	logEvent := func(e transcode.Event) {
 		if jsonOut {

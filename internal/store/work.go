@@ -117,8 +117,16 @@ WHERE id=?`,
 // attempts, which keeps a transient error from parking it forever.
 func (s *Store) Fail(ctx context.Context, id int64, code, message string, maxAttempts int) (state string, err error) {
 	var attempts int
-	if err := s.db.QueryRowContext(ctx, `SELECT attempts FROM files WHERE id=?`, id).Scan(&attempts); err != nil {
+	var current string
+	if err := s.db.QueryRowContext(ctx, `SELECT attempts, state FROM files WHERE id=?`, id).
+		Scan(&attempts, &current); err != nil {
 		return "", err
+	}
+	// A failure that arrives after the file was finished is a stale report —
+	// the node retried an old attempt, or the switch happened twice. Recording
+	// it would re-queue a file that is already replaced.
+	if current == "done" {
+		return "done", nil
 	}
 	attempts++
 	state = "planned"
@@ -127,7 +135,7 @@ func (s *Store) Fail(ctx context.Context, id int64, code, message string, maxAtt
 	}
 	err = s.exec(ctx, `
 UPDATE files SET attempts=?, state=?, last_error=?, last_error_code=?, updated_at=?
-WHERE id=?`, attempts, state, message, code, time.Now().Unix(), id)
+WHERE id=? AND state <> 'done'`, attempts, state, message, code, time.Now().Unix(), id)
 	return state, err
 }
 

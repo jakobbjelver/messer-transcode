@@ -138,3 +138,39 @@ func planned(t *testing.T, s *Store) Work {
 	}
 	return jobs[0]
 }
+
+// TestFailAfterFinishDoesNotRequeue is the stale-report guard: a node that
+// retries an old attempt must not turn a replaced file back into work.
+func TestFailAfterFinishDoesNotRequeue(t *testing.T) {
+	ctx := context.Background()
+	s := tempStore(t)
+	if _, _, err := s.UpsertScanned(ctx, "movies", []media.Scanned{
+		{Path: "/lib/film.mkv", Size: 1000, MtimeNS: 100},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	job := planned(t, s)
+	if err := s.Finish(ctx, job.ID, 1000, 400, 95, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := s.Fail(ctx, job.ID, "E_NODE_INTERRUPTED", "stale report", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state != "done" {
+		t.Fatalf("Fail returned %q, want done", state)
+	}
+	var got string
+	var attempts int
+	if err := s.db.QueryRowContext(ctx, `SELECT state, attempts FROM files WHERE id=?`, job.ID).
+		Scan(&got, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if got != "done" {
+		t.Fatalf("state = %q, want done — a stale failure re-queued a replaced file", got)
+	}
+	if attempts != 0 {
+		t.Fatalf("attempts = %d, want 0", attempts)
+	}
+}

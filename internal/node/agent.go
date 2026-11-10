@@ -36,16 +36,29 @@ type Client struct {
 	token string
 	node  string
 	http  *http.Client
+
+	// outbox is where a finished job's report is parked until the orchestrator
+	// acknowledges it. The swap cannot be undone by a restart, so the report
+	// must not be lost by one either.
+	outbox *journal
+
+	// RetryFor bounds how long a final state change waits out an orchestrator
+	// that is being recreated. Zero means the default.
+	RetryFor time.Duration
+
+	// log is where a retry says so. Silent retries look like a hang.
+	log func(transcode.Event)
 }
 
 // NewClient builds a client. The timeout is generous because a claim can wait
 // on a busy database, but it exists: a hung node must not hang forever.
 func NewClient(base, token, node string) *Client {
 	return &Client{
-		base:  strings.TrimRight(base, "/"),
-		token: token,
-		node:  node,
-		http:  &http.Client{Timeout: 30 * time.Second},
+		base:     strings.TrimRight(base, "/"),
+		token:    token,
+		node:     node,
+		http:     &http.Client{Timeout: 30 * time.Second},
+		RetryFor: 90 * time.Second,
 	}
 }
 
@@ -163,7 +176,7 @@ func (c *Client) SetProgress(ctx context.Context, id int64, fraction, speed floa
 }
 
 func (c *Client) Skip(ctx context.Context, id int64, code, reason string) error {
-	return c.state(ctx, id, map[string]any{"state": "skipped", "code": code, "detail": reason})
+	return c.stateFinal(ctx, id, map[string]any{"state": "skipped", "code": code, "detail": reason})
 }
 
 func (c *Client) Finish(ctx context.Context, id int64, before, after int64, vmaf float64, out *media.OutputFacts) error {
@@ -174,7 +187,35 @@ func (c *Client) Finish(ctx context.Context, id int64, before, after int64, vmaf
 		body["probe"] = out.Probe
 		body["mtime_ns"] = out.MtimeNS
 	}
-	return c.state(ctx, id, body)
+
+	// Write the report down before trying to send it. The swap has already
+	// happened; if the orchestrator is being recreated right now, this record is
+	// the only thing that will tell it so.
+	if c.outbox != nil {
+		_ = c.outbox.recordOutcome(outcome{
+			JobID: id, Before: before, After: after, VMAF: vmaf,
+			Probe: probeOf(out), MtimeNS: mtimeOf(out),
+		})
+	}
+	err := c.stateFinal(ctx, id, body)
+	if err == nil && c.outbox != nil {
+		c.outbox.clearOutcome(id)
+	}
+	return err
+}
+
+func probeOf(out *media.OutputFacts) media.Probe {
+	if out == nil {
+		return media.Probe{}
+	}
+	return out.Probe
+}
+
+func mtimeOf(out *media.OutputFacts) int64 {
+	if out == nil {
+		return 0
+	}
+	return out.MtimeNS
 }
 
 // Fail reports a failed attempt. The store decides whether the file is
@@ -183,7 +224,7 @@ func (c *Client) Fail(ctx context.Context, id int64, code, detail string, _ int)
 	var out struct {
 		State string `json:"state"`
 	}
-	_, _, err := c.do(ctx, http.MethodPost,
+	_, _, err := c.doRetry(ctx, http.MethodPost,
 		fmt.Sprintf("/api/v1/node/jobs/%d/state", id),
 		map[string]any{"state": "failed", "code": code, "detail": detail}, &out)
 	return out.State, err
@@ -193,6 +234,52 @@ func (c *Client) Event(ctx context.Context, level, code string, fileID int64, me
 	_, _, err := c.do(ctx, http.MethodPost, "/api/v1/node/event", map[string]any{
 		"file_id": fileID, "level": level, "code": code, "message": message, "data": data,
 	}, nil)
+	return err
+}
+
+// stateFinal posts an outcome and waits out a server that is not there yet.
+//
+// The node outlives the orchestrator: Komodo recreates the container, an image
+// is pulled, a process restarts. None of that is a reason to lose a job that
+// has already been encoded and placed, so a transport error or a 5xx is retried
+// with backoff for RetryFor. A 4xx is not retried: a bad token never heals.
+// doRetry runs do until it succeeds, the deadline passes, or the error is one
+// that will not heal on its own.
+func (c *Client) doRetry(ctx context.Context, method, path string, body, out any) (int, http.Header, error) {
+	limit := c.RetryFor
+	if limit <= 0 {
+		limit = 90 * time.Second
+	}
+	deadline := time.Now().Add(limit)
+	wait := time.Second
+	for {
+		status, hdr, err := c.do(ctx, method, path, body, out)
+		if err == nil {
+			return status, hdr, nil
+		}
+		var api *APIError
+		if errors.As(err, &api) && api.Status < 500 {
+			return status, hdr, err
+		}
+		if ctx.Err() != nil || time.Now().After(deadline) {
+			return status, hdr, err
+		}
+		if c.log != nil {
+			c.log(transcode.Event{Stage: "retry", Code: "E_NODE_RETRY",
+				Message: "orchestrator unavailable, retrying " + path + ": " + err.Error()})
+		}
+		if !sleep(ctx, wait) {
+			return status, hdr, err
+		}
+		if wait < 8*time.Second {
+			wait *= 2
+		}
+	}
+}
+
+func (c *Client) stateFinal(ctx context.Context, id int64, body map[string]any) error {
+	_, _, err := c.doRetry(ctx, http.MethodPost,
+		fmt.Sprintf("/api/v1/node/jobs/%d/state", id), body, nil)
 	return err
 }
 
@@ -319,10 +406,17 @@ func New(cfg *config.Config, client *Client, journalPath string, log func(transc
 	if log == nil {
 		log = func(transcode.Event) {}
 	}
+	j := newJournal(journalPath)
+	if client != nil {
+		client.outbox = j
+		if client.log == nil {
+			client.log = log
+		}
+	}
 	return &Agent{
 		cfg:         cfg,
 		client:      client,
-		journal:     newJournal(journalPath),
+		journal:     j,
 		log:         log,
 		Idle:        5 * time.Second,
 		MaxIdle:     2 * time.Minute,
@@ -356,6 +450,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	_ = a.client.Event(ctx, "info", "NODE_UP", 0, "node started", "")
 	a.idleReported = time.Now()
 	a.sweepQuarantine(ctx)
+	// Finished-but-unreported work first: a job whose swap landed while the
+	// orchestrator was down must be reported as done, not as interrupted.
+	a.flushOutcomes(ctx)
 	a.recoverInterrupted(ctx)
 
 	if a.Egress {
@@ -375,6 +472,10 @@ func (a *Agent) Run(ctx context.Context) error {
 				continue
 			}
 		}
+
+		// Never claim a file this node has already finished and placed; the
+		// report may simply not have reached the orchestrator yet.
+		a.flushOutcomes(ctx)
 
 		job, reason, err := a.takeNext(ctx)
 		switch {
@@ -632,6 +733,29 @@ func (a *Agent) runOne(ctx context.Context, job store.Work) {
 			a.journal.finish(job.ID)
 		},
 	})
+}
+
+// flushOutcomes delivers finished work the orchestrator never acknowledged.
+//
+// It runs before every claim and at boot. The swap cannot be undone, so a
+// report that did not arrive must be re-sent rather than rediscovered by
+// re-encoding a file that is already the output.
+func (a *Agent) flushOutcomes(ctx context.Context) {
+	pending := a.journal.outcomes()
+	if len(pending) == 0 {
+		return
+	}
+	for _, o := range pending {
+		out := &media.OutputFacts{Probe: o.Probe, MtimeNS: o.MtimeNS}
+		if err := a.client.Finish(ctx, o.JobID, o.Before, o.After, o.VMAF, out); err != nil {
+			a.log(transcode.Event{FileID: o.JobID, Stage: "error", Code: "E_NODE_REPLAY",
+				Message: fmt.Sprintf("kept %d unacknowledged report(s), will retry: %v", len(pending), err)})
+			return
+		}
+		a.log(transcode.Event{FileID: o.JobID, Path: o.Path, Stage: "recovered", Code: "E_NODE_REPLAY",
+			Message: "reported a replacement made before the orchestrator came back"})
+		a.journal.finish(o.JobID)
+	}
 }
 
 // recoverInterrupted reports every job that was in flight when the node died.
