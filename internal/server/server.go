@@ -295,7 +295,7 @@ func (s *Server) filePage(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "file", fileView{
 		base:     s.base(f.Path, "queue", live, hasLive),
 		File:     f,
-		Expected: planner.ExpectedVMAF(s.cfg, f.Codec, f.Height),
+		Expected: planner.ExpectedVMAF(s.cfg, f.Codec, planner.NominalHeight(f.Width, f.Height)),
 	})
 }
 

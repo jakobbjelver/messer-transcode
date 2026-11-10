@@ -55,6 +55,7 @@ type Probe struct {
 // actually changes something: rewriting a 5 GB file to strip two subtitle
 // tracks saves nothing, while turning DTS into EAC3 is what makes it play.
 type Facts struct {
+	Width       int
 	Height      int
 	Codec       string
 	BitrateKbps int
@@ -65,6 +66,7 @@ type Facts struct {
 // Facts projects a probe down to what the rules engine needs.
 func (p Probe) Facts() Facts {
 	f := Facts{
+		Width:       p.Width,
 		Height:      p.Height,
 		Codec:       p.VideoCodec,
 		BitrateKbps: p.BitrateKbps,

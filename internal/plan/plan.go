@@ -150,7 +150,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 }
 
 func plannerFacts(u store.Undecided) media.Facts {
-	f := media.Facts{Height: u.Height, Codec: u.Codec, BitrateKbps: u.BitrateKbps}
+	f := media.Facts{Width: u.Width, Height: u.Height, Codec: u.Codec, BitrateKbps: u.BitrateKbps}
 
 	// The rule list can read audio, so the facts must carry it. A file whose
 	// audio JSON is missing or unreadable projects to empty audio facts and

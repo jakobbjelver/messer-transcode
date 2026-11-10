@@ -288,7 +288,7 @@ func Split(ctx context.Context, opts Options, t Task) (Result, func(context.Cont
 			DurationToleranceS: float64(cfg.Safety.DurationTolSec),
 			SampleSeconds:      cfg.Safety.VerifySampleSec,
 			VerifyVMAF:         cfg.Safety.VerifyVMAF && t.Decision == "encode",
-			ExpectedVMAF:       planner.ExpectedVMAF(cfg, probe.VideoCodec, probe.Height),
+			ExpectedVMAF:       planner.ExpectedVMAF(cfg, probe.VideoCodec, planner.NominalHeight(probe.Width, probe.Height)),
 			VMAFTolerance:      cfg.Quality.VMAFTolerance,
 			RefPath:            t.Path,
 		})
