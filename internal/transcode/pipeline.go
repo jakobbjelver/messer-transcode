@@ -367,16 +367,27 @@ func Commit(ctx context.Context, opts Options, t Task, res *Result, before int64
 		return abort(opts, t, "E_REPLACE_COPY", err.Error())
 	}
 
-	q, err := Quarantine(t.Path, t.LibraryRoot, cfg.Paths.Quarantine, time.Now())
-	if err != nil {
-		return abort(opts, t, "E_QUARANTINE", err.Error())
+	q := ""
+	if cfg.Safety.QuarantineEnabled() {
+		var err error
+		q, err = Quarantine(t.Path, t.LibraryRoot, cfg.Paths.Quarantine, time.Now())
+		if err != nil {
+			return abort(opts, t, "E_QUARANTINE", err.Error())
+		}
+		res.Quarantine = q
+		emit("replace", "", "original quarantined at "+q)
+	} else {
+		// No copy: the bytes that were replaced leave with the rename. Say so
+		// in the log every time, so an audit can tell a swap from a swap.
+		emit("replace", "", "quarantine off: the original is replaced in place")
 	}
-	res.Quarantine = q
-	emit("replace", "", "original quarantined at "+q)
 
 	if err := Replace(tmp, t.Path); err != nil {
-		return abort(opts, t, "E_REPLACE_RENAME",
-			fmt.Sprintf("%v (the original is safe at %s)", err, q))
+		detail := fmt.Sprintf("%v (the original is untouched)", err)
+		if q != "" {
+			detail = fmt.Sprintf("%v (the original is safe at %s)", err, q)
+		}
+		return abort(opts, t, "E_REPLACE_RENAME", detail)
 	}
 
 	if err := opts.Reporter.Finish(ctx, t.ID, before, res.BytesAfter, res.Verdict.VMAF); err != nil {

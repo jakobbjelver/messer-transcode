@@ -181,12 +181,16 @@ type Undecided struct {
 	Height      int
 	Codec       string
 	BitrateKbps int
+	// AudioTracks is the raw JSON array of audio streams, so a decision rule can
+	// read codecs and the track count without the store knowing track shapes.
+	AudioTracks string
 }
 
 // FilesNeedingDecision returns probed files without a verdict.
 func (s *Store) FilesNeedingDecision(ctx context.Context) ([]Undecided, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, path, size_bytes, COALESCE(height,0), COALESCE(video_codec,''), COALESCE(bitrate_kbps,0)
+SELECT id, path, size_bytes, COALESCE(height,0), COALESCE(video_codec,''), COALESCE(bitrate_kbps,0),
+       COALESCE(audio_tracks,'[]')
 FROM files
 WHERE probe_key IS NOT NULL AND (decision IS NULL OR decision = '')
 ORDER BY id`)
@@ -198,7 +202,7 @@ ORDER BY id`)
 	var out []Undecided
 	for rows.Next() {
 		var u Undecided
-		if err := rows.Scan(&u.ID, &u.Path, &u.Size, &u.Height, &u.Codec, &u.BitrateKbps); err != nil {
+		if err := rows.Scan(&u.ID, &u.Path, &u.Size, &u.Height, &u.Codec, &u.BitrateKbps, &u.AudioTracks); err != nil {
 			return nil, err
 		}
 		out = append(out, u)

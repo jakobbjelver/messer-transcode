@@ -114,7 +114,26 @@ func matches(c config.Condition, f media.Facts) bool {
 	if c.BitrateGTE != nil && f.BitrateKbps < *c.BitrateGTE {
 		return false
 	}
+	if len(c.AudioCodecIn) > 0 && !anyCodec(c.AudioCodecIn, f.AudioCodecs) {
+		return false
+	}
+	if c.AudioTracksGT != nil && f.AudioTracks <= *c.AudioTracksGT {
+		return false
+	}
 	return true
+}
+
+// anyCodec reports whether any of want is among have. An empty have never
+// matches: a file with no recorded audio facts must not trip an audio rule.
+func anyCodec(want, have []string) bool {
+	for _, w := range want {
+		for _, h := range have {
+			if strings.EqualFold(w, h) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // TargetKbps picks the first ladder row for the codec whose threshold the

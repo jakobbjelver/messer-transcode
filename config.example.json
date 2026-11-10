@@ -50,11 +50,13 @@
     "keep_forced": true
   },
   "rules": [
-    { "when": { "height_lt": 1080 }, "do": "remux", "code": "R_LOW_RES" },
-    { "when": { "codec": "hevc", "bitrate_kbps_lt": 5000 }, "do": "remux", "code": "R_HEVC_EFFICIENT" },
+    { "when": { "height_lt": 1080, "audio_codec_in": ["truehd", "flac", "pcm_bluray", "dts"] }, "do": "remux", "code": "R_LOW_RES_AUDIO" },
+    { "when": { "height_lt": 1080 }, "do": "skip", "code": "R_LOW_RES_KEEP" },
     { "when": { "codec": "hevc", "bitrate_kbps_gte": 8000 }, "do": "encode", "code": "R_HEVC_OVERBITRATE" },
     { "when": { "codec": "h264", "bitrate_kbps_gte": 5000 }, "do": "encode", "code": "R_H264_ENCODE" },
     { "when": { "codec": "h264" }, "do": "encode", "code": "R_H264_LOW_BITRATE" },
+    { "when": { "audio_codec_in": ["truehd", "flac", "pcm_bluray", "dts"] }, "do": "remux", "code": "R_AUDIO_NEEDS_EAC3" },
+    { "when": { "audio_tracks_gt": 3 }, "do": "remux", "code": "R_TOO_MANY_TRACKS" },
     { "when": { "default": true }, "do": "skip", "code": "R_NO_RULE" }
   ],
   "safety": {
@@ -65,7 +67,8 @@
     "keep_quarantine_days": 14,
     "verify_sample_seconds": 60,
     "verify_vmaf": true,
-    "max_attempts": 3
+    "max_attempts": 3,
+    "quarantine": "copy"
   },
   "notify": {
     "radarr": "http://host.docker.internal:7878",

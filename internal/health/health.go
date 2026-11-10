@@ -352,6 +352,13 @@ func checkDisk(in In) Check {
 // the node is down, the marker is stale, the code regressed — the first sign is
 // a directory older than the keep window, long before the disk complains.
 func checkQuarantine(in In, now time.Time) Check {
+	// Off is a legitimate configuration now: the swap is still one rename, but
+	// there is no copy to fall back on. Say that plainly rather than reporting
+	// a directory that will never grow.
+	if !in.Config.Safety.QuarantineEnabled() {
+		return Check{Name: "quarantine", Status: OK,
+			Detail: "off — replaced originals are not kept"}
+	}
 	root := in.Config.Paths.Quarantine
 	if root == "" {
 		return Check{Name: "quarantine", Status: OK, Detail: "not configured"}

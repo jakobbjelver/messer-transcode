@@ -5,7 +5,9 @@ package plan
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -148,7 +150,19 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 }
 
 func plannerFacts(u store.Undecided) media.Facts {
-	return media.Facts{Height: u.Height, Codec: u.Codec, BitrateKbps: u.BitrateKbps}
+	f := media.Facts{Height: u.Height, Codec: u.Codec, BitrateKbps: u.BitrateKbps}
+
+	// The rule list can read audio, so the facts must carry it. A file whose
+	// audio JSON is missing or unreadable projects to empty audio facts and
+	// simply never matches an audio rule.
+	var tracks []media.AudioTrack
+	if u.AudioTracks != "" && json.Unmarshal([]byte(u.AudioTracks), &tracks) == nil {
+		f.AudioTracks = len(tracks)
+		for _, t := range tracks {
+			f.AudioCodecs = append(f.AudioCodecs, strings.ToLower(t.Codec))
+		}
+	}
+	return f
 }
 
 func probeAll(ctx context.Context, opts Options, queue []store.Pending) (probed, failed int) {

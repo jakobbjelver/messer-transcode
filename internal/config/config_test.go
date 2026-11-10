@@ -106,7 +106,7 @@ func TestCheckCatches(t *testing.T) {
 		},
 		{
 			name:   "default rule with extra conditions",
-			mutate: func(c *Config) { c.Rules[5].When.Codec = "hevc" },
+			mutate: func(c *Config) { c.Rules[len(c.Rules)-1].When.Codec = "hevc" },
 			want:   "cannot carry other conditions",
 		},
 		{

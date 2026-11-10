@@ -255,12 +255,14 @@ func (c *Config) checkRules(ps *problems) {
 
 		w := rule.When
 		if w.Default {
-			if w.HeightLT != nil || w.HeightGTE != nil || w.BitrateLT != nil || w.BitrateGTE != nil || w.Codec != "" {
+			if w.HeightLT != nil || w.HeightGTE != nil || w.BitrateLT != nil || w.BitrateGTE != nil ||
+				w.Codec != "" || len(w.AudioCodecIn) > 0 || w.AudioTracksGT != nil {
 				ps.add(at+"/when", "the default rule cannot carry other conditions")
 			}
 			continue
 		}
-		if w.HeightLT == nil && w.HeightGTE == nil && w.BitrateLT == nil && w.BitrateGTE == nil && w.Codec == "" {
+		if w.HeightLT == nil && w.HeightGTE == nil && w.BitrateLT == nil && w.BitrateGTE == nil &&
+			w.Codec == "" && len(w.AudioCodecIn) == 0 && w.AudioTracksGT == nil {
 			ps.add(at+"/when", "no conditions: use \"default\": true instead")
 		}
 		if w.HeightLT != nil && w.HeightGTE != nil && *w.HeightLT <= *w.HeightGTE {

@@ -38,6 +38,12 @@ make docker     # container image
   mount, where SQLite dies.
 - **Rules are data, not code**: a re-encode policy change is a JSON rule edit plus a measured VMAF
   check, never a hard-coded branch.
+- **A verdict comes from an exit code, not from stderr text.** ffmpeg writes the null-muxer DTS
+  monotonicity warning on healthy files whose PTS equals DTS, and exits 0. Verify treats a non-zero
+  exit as failure, filters that one known line, and keeps everything else fatal.
+- **The quarantine is optional; the swap is not.** Replacing is one rename inside the destination
+  directory whether or not a copy is kept, so a crash before the rename always leaves the original.
+  `safety.quarantine: "off"` gives up only the rollback copy, never the atomicity.
 - **Measured numbers are facts** (bitrate, VMAF target, encode time). Re-measure before contradicting
   the plan; do not "improve" a measured value by intuition.
 - **Deploy is build → image → Komodo**: push builds `ghcr.io/jakobbjelver/messer-transcode`, then
