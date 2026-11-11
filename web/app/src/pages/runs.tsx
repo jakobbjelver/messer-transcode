@@ -14,11 +14,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api, asApiError } from "@/lib/api";
 import { gb, pct, day, timeOfDay } from "@/lib/format";
 import { qk } from "@/lib/keys";
+import { useRowClick } from "@/lib/rows";
 import { scheduleLabel } from "@/lib/schedule";
 
 const LAST = 30;
 
 export function RunsPage() {
+  const rowTo = useRowClick();
   const runs = useQuery({ queryKey: qk.runs(LAST), queryFn: () => api.runs(LAST) });
   const runsError = runs.error ? asApiError(runs.error) : null;
 
@@ -66,8 +68,8 @@ export function RunsPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="m-label">Window</TableHead>
-                <TableHead className="m-label hidden md:table-cell">Kind</TableHead>
+                <TableHead className="m-label">When</TableHead>
+                <TableHead className="m-label hidden md:table-cell">Window</TableHead>
                 <TableHead className="m-label text-right">Done</TableHead>
                 <TableHead className="m-label hidden text-right lg:table-cell">Encoded</TableHead>
                 <TableHead className="m-label hidden text-right lg:table-cell">Remuxed</TableHead>
@@ -79,7 +81,7 @@ export function RunsPage() {
             </TableHeader>
             <TableBody>
               {runs.data.runs.map((r) => (
-                <TableRow key={r.id}>
+                <TableRow key={r.id} onClick={rowTo(`/runs/${r.id}`)} className="cursor-pointer">
                   <TableCell className="whitespace-nowrap">
                     <Link to={`/runs/${r.id}`} className="underline-offset-4 hover:underline">
                       <span className="text-[var(--text-2)]">{day(r.Start)}</span>{" "}
@@ -94,7 +96,9 @@ export function RunsPage() {
                     ) : null}
                   </TableCell>
                   <TableCell className="m-data hidden text-[var(--text-2)] md:table-cell">
-                    {r.Kind || "—"} <span className="text-[var(--text-3)]">{r.Spec}</span>
+                    {/* The spec already says which days it covers — printing the
+                        kind beside it read "weekday weekdays, 00:30–05:30". */}
+                    <span className="text-[var(--text-2)]">{r.Spec || r.Kind || "—"}</span>
                   </TableCell>
                   <TableCell className="m-data text-right">{r.done}</TableCell>
                   <TableCell className="m-data hidden text-right lg:table-cell">{r.encoded}</TableCell>

@@ -24,7 +24,7 @@ const CHECK_STATUS = {
   broken: "danger",
 } as const;
 
-export function SettingsPage() {
+export function SystemPage() {
   const config = useQuery({ queryKey: qk.config, queryFn: api.config });
   const health = useQuery({ queryKey: qk.health, queryFn: api.health, staleTime: 30_000 });
   const configError = config.error ? asApiError(config.error) : null;
@@ -35,7 +35,7 @@ export function SettingsPage() {
       <Page>
         <ErrorState
           code={configError.code}
-          title="Settings did not load"
+          title="System did not load"
           description={configError.message}
           actions={<Button onClick={() => void config.refetch()}>Try again</Button>}
         />
@@ -46,9 +46,9 @@ export function SettingsPage() {
   return (
     <Page>
       <PageHeader
-        eyebrow="settings"
-        title="What this orchestrator is and what it is made of"
-        description="The build, the store, and the checks. The configuration has its own screen now, with its history."
+        eyebrow="system"
+        title="What this instance is"
+        description="The build, the store and the checks: what this instance is, as opposed to what it does."
         actions={
           <>
             <Link to="/config">
@@ -90,9 +90,6 @@ export function SettingsPage() {
                 <span className="break-all">{config.data.db_path}</span>{" "}
                 <span className="m-data text-[var(--text-3)]">{bytes(config.data.db_size_bytes)}</span>
               </Row>
-              <Row label="Config file">
-                <span className="break-all">{config.data.config_path}</span>
-              </Row>
             </dl>
           </SettingsSection>
         )}
@@ -100,7 +97,7 @@ export function SettingsPage() {
 
       <Section
         eyebrow="health"
-        aside={health.data ? `verdict ${health.data.status} · ${health.data.duration_ms} ms` : undefined}
+        aside={health.data ? `${health.data.status} · checked in ${health.data.duration_ms} ms` : undefined}
       >
         {healthError ? (
           <ErrorState
@@ -136,22 +133,6 @@ export function SettingsPage() {
         )}
       </Section>
 
-      <Section
-        eyebrow="configuration"
-        aside={config.data ? config.data.config_path : undefined}
-      >
-        {config.data ? (
-          <Card className="min-w-0 overflow-hidden">
-            <CardContent className="min-w-0">
-              <pre className="m-data max-h-[32rem] overflow-auto whitespace-pre text-[var(--text-2)]">
-                {JSON.stringify(config.data.config, null, 2)}
-              </pre>
-            </CardContent>
-          </Card>
-        ) : (
-          <Skeleton className="h-64 w-full" />
-        )}
-      </Section>
     </Page>
   );
 }

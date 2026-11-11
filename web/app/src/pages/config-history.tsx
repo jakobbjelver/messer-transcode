@@ -2,7 +2,7 @@ import { ClockCounterClockwise, GitDiff } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { BackButton } from "@/components/back-button";
+import { BackButton, PageBack } from "@/components/back-button";
 import { DiffDialog } from "@/components/diff-dialog";
 import { Page } from "@/components/page";
 import { RefreshButton } from "@/components/refresh-button";
@@ -36,6 +36,7 @@ export function ConfigHistoryPage() {
 
   const error = list.error ? asApiError(list.error) : null;
   const back = <BackButton parent="/config" />;
+  const backLink = <PageBack parent="/config" />;
 
   if (error) {
     return (
@@ -60,6 +61,7 @@ export function ConfigHistoryPage() {
 
   return (
     <Page>
+      {backLink}
       <PageHeader
         eyebrow="config history"
         title="Every version the pipeline has run"
@@ -74,12 +76,7 @@ export function ConfigHistoryPage() {
             "…"
           )
         }
-        actions={
-          <>
-            {back}
-            <RefreshButton busy={list.isFetching} onRefresh={() => void list.refetch()} />
-          </>
-        }
+        actions={<RefreshButton busy={list.isFetching} onRefresh={() => void list.refetch()} />}
       />
 
       {err ? <p className="text-sm text-destructive">{err}</p> : null}

@@ -23,6 +23,7 @@ import { actionNote } from "@/lib/control";
 import { bytes, fileName, kbps, pct, saving, stamp } from "@/lib/format";
 import { qk } from "@/lib/keys";
 import { columnsFor, queueHref, TABS, tabFrom, type Column } from "@/lib/queue";
+import { useRowClick } from "@/lib/rows";
 import { statePresentation } from "@/lib/status";
 import type { FileRow } from "@/lib/types";
 
@@ -42,6 +43,7 @@ const META: Record<Column, { label: string; right?: boolean; hide?: string }> = 
 };
 
 export function QueuePage() {
+  const rowTo = useRowClick();
   const [params, setParams] = useSearchParams();
   const qc = useQueryClient();
   const tab = tabFrom(params);
@@ -323,7 +325,7 @@ export function QueuePage() {
               </TableHeader>
               <TableBody>
                 {rows.map((row) => (
-                  <TableRow key={row.id}>
+                  <TableRow key={row.id} onClick={rowTo(`/files/${row.id}`)} className="cursor-pointer">
                     <TableCell>
                       <Checkbox
                         checked={selected.has(row.id)}

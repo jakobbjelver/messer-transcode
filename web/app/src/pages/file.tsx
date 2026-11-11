@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 
-import { BackButton } from "@/components/back-button";
+import { BackButton, PageBack } from "@/components/back-button";
 import { Page } from "@/components/page";
 import { Section } from "@/components/section";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,8 +23,10 @@ export function FilePage() {
   const detailError = detail.error ? asApiError(detail.error) : null;
 
   // The origin comes from the link that opened this page — the queue's filter,
-  // the dashboard or a run — so the label is never a guess.
+  // the dashboard or a run — so the label is never a guess. An error page has
+  // no header to sit above, so there it is a button in the action row.
   const back = <BackButton parent="/queue" />;
+  const backLink = <PageBack parent="/queue" />;
 
   if (!valid) {
     return (
@@ -64,16 +66,12 @@ export function FilePage() {
 
   return (
     <Page>
+      {backLink}
       <PageHeader
         eyebrow={`${file.library || "library"} · ${file.decision || "no decision"}`}
         title={fileName(file.path)}
         description={<span className="break-all">{file.path}</span>}
-        actions={
-          <>
-            <StatusBadge status={presentation.status}>{presentation.label}</StatusBadge>
-            {back}
-          </>
-        }
+        actions={<StatusBadge status={presentation.status}>{presentation.label}</StatusBadge>}
       />
 
       <Section eyebrow="the file">
