@@ -6,7 +6,7 @@ export const PAGES = {
   "/queue": "Queue",
   "/runs": "Runs",
   "/config": "Config",
-  "/settings": "Settings",
+  "/system": "System",
 } as const;
 
 export type PagePath = keyof typeof PAGES;

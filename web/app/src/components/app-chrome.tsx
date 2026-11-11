@@ -11,7 +11,7 @@ const NAV = [
   { href: "/queue", label: "Queue" },
   { href: "/runs", label: "Runs" },
   { href: "/config", label: "Config" },
-  { href: "/settings", label: "Settings" },
+  { href: "/system", label: "System" },
 ];
 
 /** The single place this app knows its own navigation. */

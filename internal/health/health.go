@@ -179,7 +179,7 @@ func fold(checks []Check) Status {
 
 func checkConfig(in In) Check {
 	if in.Config == nil {
-		c := Check{Name: "config", Status: Broken}
+		c := Check{Name: "config file", Status: Broken}
 		if in.OpenError != nil {
 			c.Detail = in.OpenError.Error()
 		} else {
@@ -203,11 +203,11 @@ func checkConfig(in In) Check {
 	// night that did nothing.
 	if in.ConfigPath != "" {
 		if _, err := config.Load(in.ConfigPath); err != nil {
-			return Check{Name: "config", Status: Broken, Code: "E_CONFIG_INVALID",
+			return Check{Name: "config file", Status: Broken, Code: "E_CONFIG_INVALID",
 				Detail: err.Error(), Fix: "fix " + in.ConfigPath + ", then validate it"}
 		}
 	}
-	return Check{Name: "config", Status: OK,
+	return Check{Name: "config file", Status: OK,
 		Detail: fmt.Sprintf("%d libraries, %s", len(in.Config.Libraries), describeSchedule(in.Config.Schedule))}
 }
 

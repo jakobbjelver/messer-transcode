@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Link, useParams } from "react-router-dom";
 
-import { BackButton } from "@/components/back-button";
+import { BackButton, PageBack } from "@/components/back-button";
 import { Page } from "@/components/page";
 import { Section } from "@/components/section";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,6 +32,7 @@ export function RunPage() {
   const valid = Number.isFinite(runID) && runID > 0;
   const detail = useQuery({ queryKey: qk.run(runID), queryFn: () => api.run(runID), enabled: valid });
   const back = <BackButton parent="/runs" />;
+  const backLink = <PageBack parent="/runs" />;
   const error = detail.error ? asApiError(detail.error) : null;
 
   if (!valid) {
@@ -73,6 +74,7 @@ export function RunPage() {
 
   return (
     <Page>
+      {backLink}
       <PageHeader
         eyebrow="the run"
         title={when}
@@ -82,12 +84,7 @@ export function RunPage() {
             {run.failed} failed, {run.skipped} left alone
           </>
         }
-        actions={
-          <>
-            {run.Open ? <StatusBadge status="neutral">live</StatusBadge> : null}
-            {back}
-          </>
-        }
+        actions={run.Open ? <StatusBadge status="neutral">live</StatusBadge> : null}
       />
 
       <Section eyebrow="what it did">
