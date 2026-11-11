@@ -1,13 +1,18 @@
 import type {
   ActResult,
+  ConfigDoc,
   ConfigResponse,
+  ConfigState,
   ControlResponse,
+  Diff,
+  DryRun,
   EventRow,
   FileResponse,
   FilesResponse,
   HealthReport,
   Live,
   QueueSummary,
+  Revision,
   RunResponse,
   RunsResponse,
   StatusResponse,
@@ -17,12 +22,19 @@ import type {
 export class ApiError extends Error {
   code: string;
   status: number;
+  /**
+   * The whole response body, when there was one. A 409 from the config write is
+   * not just an error: it carries the revision that won and the diff this tab
+   * missed, and losing it would turn a solvable conflict into "it did not save".
+   */
+  payload?: unknown;
 
-  constructor(code: string, message: string, status: number) {
+  constructor(code: string, message: string, status: number, payload?: unknown) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
+    this.payload = payload;
   }
 }
 
@@ -36,14 +48,16 @@ export function asApiError(err: unknown): ApiError {
 async function raise(res: Response): Promise<never> {
   let code = "E_HTTP_" + res.status;
   let message = res.statusText;
+  let payload: unknown;
   try {
     const body = (await res.json()) as { error?: { code?: string; message?: string } };
+    payload = body;
     code = body.error?.code ?? code;
     message = body.error?.message ?? message;
   } catch {
     // A non-JSON body (a proxy page, a dropped connection) keeps the status text.
   }
-  throw new ApiError(code, message, res.status);
+  throw new ApiError(code, message, res.status, payload);
 }
 
 async function get<T>(path: string, okStatuses: number[] = []): Promise<T> {
@@ -105,6 +119,27 @@ export const api = {
   events: (limit: number) => get<{ events: EventRow[] }>(`/api/v1/events?limit=${limit}`),
   live: () => get<{ live: Live | null }>("/api/v1/live"),
   config: () => get<ConfigResponse>("/api/v1/config"),
+
+  // ── configuration ───────────────────────────────────────────────────────
+  // One write path, three ways in: a form draft, an adopted hand edit, and a
+  // revert. All of them are "a new revision" on the server.
+  configHistory: (limit = 30) => get<{ revisions: Revision[]; state: ConfigState }>(
+    `/api/v1/config/history?limit=${limit}`,
+  ),
+  configRevision: (rev: number) => get<Revision & { content: string }>(`/api/v1/config/revisions/${rev}`),
+  configDiff: (from: number, to: number) => get<Diff>(`/api/v1/config/diff?from=${from}&to=${to}`),
+  configDryRun: (config: ConfigDoc | string) =>
+    send<DryRun>("POST", "/api/v1/config/dry-run", { config }),
+  configSave: (config: ConfigDoc | string, baseRev: number, message: string) =>
+    send<{ rev: number; sha: string; config: ConfigDoc; warnings: string[]; state: ConfigState }>(
+      "POST",
+      "/api/v1/config",
+      { config, base_rev: baseRev, message },
+    ),
+  configAdopt: (message: string) =>
+    send<{ rev: number; sha: string; state: ConfigState }>("POST", "/api/v1/config/adopt", { message }),
+  configRevert: (rev: number, message: string) =>
+    send<{ rev: number; sha: string; state: ConfigState }>("POST", `/api/v1/config/revert/${rev}`, { message }),
   health: () => get<HealthReport>("/api/v1/health", [503]),
 
   control: () => get<ControlResponse>("/api/v1/control"),

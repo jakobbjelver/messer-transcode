@@ -10,6 +10,7 @@ const NAV = [
   { href: "/", label: "Overview" },
   { href: "/queue", label: "Queue" },
   { href: "/runs", label: "Runs" },
+  { href: "/config", label: "Config" },
   { href: "/settings", label: "Settings" },
 ];
 

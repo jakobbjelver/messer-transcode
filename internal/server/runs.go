@@ -19,7 +19,7 @@ import (
 // rather than one per file.
 func (s *Server) currentRunID(ctx context.Context) int64 {
 	now := time.Now()
-	if occ, ok := s.cfg.Schedule.OccurrenceAt(now); ok {
+	if occ, ok := s.config().Schedule.OccurrenceAt(now); ok {
 		// A scheduled claim ends a manual run: the forced session is over.
 		if n, err := s.st.CloseManualRuns(ctx, now.Unix()); err == nil && n > 0 {
 			s.log.Info("closed manual run", "count", n)

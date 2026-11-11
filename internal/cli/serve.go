@@ -93,7 +93,14 @@ func cmdServe(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 		log.Warn("attributed history to runs", "files", n)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	srv := server.New(cfg, st, *cfgPath, db, log)
+	if err := srv.SeedConfigRevision(ctx); err != nil {
+		log.Warn("config history", "err", err)
+	}
+	go srv.WatchConfig(ctx)
 	httpSrv := &http.Server{
 		Addr:              addr,
 		Handler:           srv.Handler(),
@@ -104,9 +111,6 @@ func cmdServe(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 
 	// Ctrl-C and SIGTERM both mean "stop taking requests, then exit", so a
 	// container restart does not leave a listener bound.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	// Keep the ledger current: a window that opens with nothing claimed is still
 	// a run, and a run that ended while this process was asleep must be closed.
 	// One minute is plenty — a run is hours long.

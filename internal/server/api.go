@@ -70,20 +70,20 @@ func (s *Server) apiRuns(w http.ResponseWriter, r *http.Request) {
 			last = n
 		}
 	}
-	runs, err := report.Collect(r.Context(), s.st, s.cfg.Schedule, time.Now(), last)
+	runs, err := report.Collect(r.Context(), s.st, s.config().Schedule, time.Now(), last)
 	if err != nil {
 		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"schedule": s.cfg.Schedule,
+		"schedule": s.config().Schedule,
 		"runs":     runs,
 	})
 }
 
 func (s *Server) apiHealth(w http.ResponseWriter, r *http.Request) {
 	rep := health.Collect(r.Context(), health.In{
-		Config:     s.cfg,
+		Config:     s.config(),
 		ConfigPath: s.cfgPath,
 		Store:      s.st,
 		DBPath:     s.dbPath,
@@ -175,7 +175,7 @@ func (s *Server) apiFile(w http.ResponseWriter, r *http.Request) {
 	nominal := planner.NominalHeight(f.Width, f.Height)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"file":           f,
-		"expected_vmaf":  planner.ExpectedVMAF(s.cfg, f.Codec, nominal),
+		"expected_vmaf":  planner.ExpectedVMAF(s.config(), f.Codec, nominal),
 		"nominal_height": nominal,
 		"reclaim_bytes":  f.Reclaim(),
 		"audio_list":     f.AudioList(),
@@ -219,7 +219,7 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 	if v, err := osStat(s.dbPath); err == nil {
 		size = v
 	}
-	redacted := *s.cfg
+	redacted := *s.config()
 	redacted.Server.Token = ""
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -233,6 +233,10 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 		"db_path":        s.dbPath,
 		"db_size_bytes":  size,
 		"config":         redacted,
+		// state is where the file stands relative to the newest revision, and
+		// whether the running process has it. The config screen reads it first:
+		// "dirty" is a property of the file, not of the form.
+		"state": s.configState(r.Context()),
 	})
 }
 
@@ -324,13 +328,13 @@ func (s *Server) pulse(ctx context.Context) streamPulse {
 
 func (s *Server) nodeGuard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.cfg.Server.Token == "" {
+		if s.config().Server.Token == "" {
 			s.fail(w, http.StatusServiceUnavailable, "E_NO_TOKEN",
 				"server.token is unset, so the node API is disabled")
 			return
 		}
 		got := r.Header.Get("X-Node-Token")
-		if subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.Server.Token)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.config().Server.Token)) != 1 {
 			s.fail(w, http.StatusUnauthorized, "E_NODE_AUTH", "bad or missing X-Node-Token")
 			return
 		}
@@ -345,7 +349,7 @@ func (s *Server) nodeRegister(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"server_time":    time.Now().Unix(),
-		"config_version": s.cfg.Version,
+		"config_version": s.config().Version,
 		"node":           req.Node,
 	})
 }
@@ -495,8 +499,8 @@ func (s *Server) nodeEvent(w http.ResponseWriter, r *http.Request) {
 // maxAttempts is how many times a file may fail before it is parked rather
 // than requeued.
 func (s *Server) maxAttempts() int {
-	if s.cfg.Safety.MaxAttempts > 0 {
-		return s.cfg.Safety.MaxAttempts
+	if s.config().Safety.MaxAttempts > 0 {
+		return s.config().Safety.MaxAttempts
 	}
 	return 3
 }
