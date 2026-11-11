@@ -169,3 +169,27 @@ func TestStreamEmitsTypedPulses(t *testing.T) {
 		return
 	}
 }
+
+// The pulse's revision is the whole cache-invalidation contract: a queue change
+// must move it, and a quiet second must not. Without that, either every page
+// polls or every page goes stale.
+func TestPulseRevisionRisesWithEvents(t *testing.T) {
+	s := newTestServer(t)
+	ctx := context.Background()
+
+	before := s.pulse(ctx)
+	if err := s.st.Event(ctx, "info", "T_REV", 0, "revision moved", ""); err != nil {
+		t.Fatal(err)
+	}
+	after := s.pulse(ctx)
+	if after.Rev <= before.Rev {
+		t.Fatalf("rev did not move: %d then %d", before.Rev, after.Rev)
+	}
+
+	// A second pulse with no new event must report the same revision, or the
+	// client would invalidate once a second and the cache would buy nothing.
+	quiet := s.pulse(ctx)
+	if quiet.Rev != after.Rev {
+		t.Fatalf("rev moved without an event: %d then %d", after.Rev, quiet.Rev)
+	}
+}
