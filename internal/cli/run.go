@@ -52,7 +52,21 @@ func cmdRun(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	work, err := st.ClaimWork(ctx, *limit)
+	// A one-off `run` still belongs to a run: stamp the occurrence it is inside
+	// so the ledger attributes the work. Outside a window there is no run, and 0
+	// is the honest answer (this command is the manual path).
+	runID := int64(0)
+	if occ, ok := cfg.Schedule.OccurrenceAt(time.Now()); ok {
+		runID, _ = st.EnsureRun(ctx, store.RunRow{
+			ID:      occ.Start.Unix(),
+			StartAt: occ.Start.Unix(),
+			EndAt:   occ.End.Unix(),
+			Spec:    occ.Spec,
+			Kind:    occ.Kind,
+		})
+	}
+
+	work, err := st.ClaimWork(ctx, *limit, runID)
 	if err != nil {
 		say(stderr, "%v\n", err)
 		return ExitRuntime

@@ -49,6 +49,8 @@ export type Schedule = {
 // Run's own fields are snake_case. Kept verbatim rather than renamed: the CLI's
 // --json output is the same object.
 export type Run = {
+  /** The ledger id: the window's unix start, and the detail page's key. */
+  id: number;
   Start: string;
   End: string;
   Spec: string;
@@ -72,6 +74,15 @@ export type Run = {
 
 export type RunsResponse = { schedule: Schedule; runs: Run[] };
 
+/** One run with the rows it handled, grouped by outcome. */
+export type RunResponse = {
+  run: Run;
+  placed: FileRow[];
+  failed: FileRow[];
+  skipped: FileRow[];
+  open: FileRow[];
+};
+
 export type FileRow = {
   id: number;
   path: string;
@@ -94,6 +105,8 @@ export type FileRow = {
   bytes_after?: number;
   vmaf?: number;
   attempts: number;
+  /** The encoder's failure code (E_*), for a row that failed. */
+  last_error_code?: string;
 };
 
 export type FileDetail = FileRow & {

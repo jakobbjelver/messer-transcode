@@ -146,6 +146,10 @@ type SummaryRow struct {
 	BytesAfter  int64   `json:"bytes_after,omitempty"`
 	VMAF        float64 `json:"vmaf,omitempty"`
 	Attempts    int     `json:"attempts"`
+	// LastErrorCode is the encoder's failure code (E_*), which is what a Failed
+	// row is about — reason_code describes the planner's decision, not the
+	// failure, and showing it in a failures table reads as the wrong answer.
+	LastErrorCode string `json:"last_error_code,omitempty"`
 }
 
 // QueueFilter is what the queue page asks for. The zero value means everything,
@@ -155,6 +159,7 @@ type QueueFilter struct {
 	States   []string // any of these (the "in flight" tab)
 	Decision string   // one exact decision
 	Query    string   // substring of the path
+	RunID    int64    // only rows claimed in this run
 	Sort     string   // "queue" (default) | "recent" | "size"
 	Limit    int
 	Offset   int
@@ -203,6 +208,10 @@ func (s *Store) Queue(ctx context.Context, f QueueFilter) (QueuePage, error) {
 		where = append(where, "path LIKE ?")
 		args = append(args, "%"+f.Query+"%")
 	}
+	if f.RunID > 0 {
+		where = append(where, "run_id = ?")
+		args = append(args, f.RunID)
+	}
 	predicate := strings.Join(where, " AND ")
 
 	var total int
@@ -226,7 +235,8 @@ func (s *Store) Queue(ctx context.Context, f QueueFilter) (QueuePage, error) {
 SELECT id, path, library, COALESCE(decision,''), COALESCE(reason_code,''), COALESCE(reason,''),
        state, COALESCE(video_codec,''), COALESCE(width,0), COALESCE(height,0), COALESCE(bitrate_kbps,0),
        COALESCE(target_kbps,0), size_bytes, priority,
-       COALESCE(finished_at,0), COALESCE(bytes_before,0), COALESCE(bytes_after,0), COALESCE(vmaf,0), attempts
+       COALESCE(finished_at,0), COALESCE(bytes_before,0), COALESCE(bytes_after,0), COALESCE(vmaf,0), attempts,
+       COALESCE(last_error_code,'')
 FROM files
 WHERE ` + predicate + `
 ORDER BY ` + order + `
@@ -243,7 +253,7 @@ LIMIT ? OFFSET ?`
 		var r SummaryRow
 		if err := rows.Scan(&r.ID, &r.Path, &r.Library, &r.Decision, &r.ReasonCode, &r.Reason,
 			&r.State, &r.Codec, &r.Width, &r.Height, &r.Bitrate, &r.Target, &r.SizeBytes, &r.Priority,
-			&r.FinishedAt, &r.BytesBefore, &r.BytesAfter, &r.VMAF, &r.Attempts); err != nil {
+			&r.FinishedAt, &r.BytesBefore, &r.BytesAfter, &r.VMAF, &r.Attempts, &r.LastErrorCode); err != nil {
 			return QueuePage{}, err
 		}
 		out = append(out, r)

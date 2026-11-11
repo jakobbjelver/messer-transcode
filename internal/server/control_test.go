@@ -227,7 +227,7 @@ func TestBulkActionReportsRefusals(t *testing.T) {
 	}
 
 	// The priority really is what the claim order reads.
-	work, err := s.st.ClaimWork(ctx, 1)
+	work, err := s.st.ClaimWork(ctx, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,7 +22,12 @@ type Work struct {
 
 // ClaimWork returns up to limit planned files that need real work and moves
 // them to "encoding" in the same transaction, so two runners cannot collide.
-func (s *Store) ClaimWork(ctx context.Context, limit int) ([]Work, error) {
+//
+// runID is stamped on every claimed row: it is what a run's figures are built
+// from, and stamping it at claim time (not at finish) means a job claimed at
+// 05:59 stays with the run that started it even when it finishes after the
+// window closed. 0 means "no ledger" (tests, a caller with no schedule).
+func (s *Store) ClaimWork(ctx context.Context, limit int, runID int64) ([]Work, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -56,8 +61,13 @@ LIMIT ?`, limit)
 
 	now := time.Now().Unix()
 	for _, w := range out {
+		var run any
+		if runID > 0 {
+			run = runID
+		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE files SET state='encoding', started_at=?, updated_at=? WHERE id=?`, now, now, w.ID); err != nil {
+			`UPDATE files SET state='encoding', started_at=?, updated_at=?, run_id=? WHERE id=?`,
+			now, now, run, w.ID); err != nil {
 			return nil, err
 		}
 	}

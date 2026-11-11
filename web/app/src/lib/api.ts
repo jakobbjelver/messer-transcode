@@ -8,6 +8,7 @@ import type {
   HealthReport,
   Live,
   QueueSummary,
+  RunResponse,
   RunsResponse,
   StatusResponse,
 } from "./types";
@@ -98,6 +99,7 @@ export type QueueAction = "retry" | "skip" | "priority";
 export const api = {
   status: () => get<StatusResponse>("/api/v1/status"),
   runs: (last: number) => get<RunsResponse>(`/api/v1/runs?last=${last}`),
+  run: (id: number) => get<RunResponse>(`/api/v1/runs/${id}`),
   files: (q: FileQuery = {}) => get<FilesResponse>("/api/v1/files" + fileQuery(q)),
   file: (id: number) => get<FileResponse>(`/api/v1/files/${id}`),
   events: (limit: number) => get<{ events: EventRow[] }>(`/api/v1/events?limit=${limit}`),

@@ -78,6 +78,21 @@ func cmdServe(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 		log = slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	}
 
+	// Attribute history to runs once. Until this release a run existed only as
+	// arithmetic over the current schedule, so the attribution is derived here —
+	// exactly once, against the schedule that produced the rows — and recorded.
+	// After that the ledger is the record and a schedule edit cannot move it.
+	//
+	// It runs against the pre-windows schedule on purpose: this binary still has
+	// weekday/weekend, and the migration that replaces them comes later.
+	if n, err := st.BackfillRuns(context.Background(), func(ts int64) (config.Occurrence, bool) {
+		return cfg.Schedule.OccurrenceAt(time.Unix(ts, 0))
+	}); err != nil {
+		log.Warn("run backfill", "err", err)
+	} else if n > 0 {
+		log.Warn("attributed history to runs", "files", n)
+	}
+
 	srv := server.New(cfg, st, *cfgPath, db, log)
 	httpSrv := &http.Server{
 		Addr:              addr,
@@ -91,6 +106,27 @@ func cmdServe(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	// container restart does not leave a listener bound.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Keep the ledger current: a window that opens with nothing claimed is still
+	// a run, and a run that ended while this process was asleep must be closed.
+	// One minute is plenty — a run is hours long.
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				tick, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				now := time.Now()
+				if err := st.SyncRuns(tick, cfg.Schedule.PreviousOccurrences(now, 2), now); err != nil {
+					log.Warn("run ledger", "err", err)
+				}
+				cancel()
+			}
+		}
+	}()
 
 	go func() {
 		<-ctx.Done()

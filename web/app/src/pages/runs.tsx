@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import { Page } from "@/components/page";
 import { RefreshButton } from "@/components/refresh-button";
@@ -78,12 +79,14 @@ export function RunsPage() {
             </TableHeader>
             <TableBody>
               {runs.data.runs.map((r) => (
-                <TableRow key={r.Start}>
+                <TableRow key={r.id}>
                   <TableCell className="whitespace-nowrap">
-                    <span className="text-[var(--text-2)]">{day(r.Start)}</span>{" "}
-                    <span className="m-data text-[var(--text-3)]">
-                      {timeOfDay(r.Start)}–{timeOfDay(r.End)}
-                    </span>
+                    <Link to={`/runs/${r.id}`} className="underline-offset-4 hover:underline">
+                      <span className="text-[var(--text-2)]">{day(r.Start)}</span>{" "}
+                      <span className="m-data text-[var(--text-3)]">
+                        {timeOfDay(r.Start)}–{timeOfDay(r.End)}
+                      </span>
+                    </Link>
                     {r.Open ? (
                       <span className="ml-2 align-middle">
                         <StatusBadge status="neutral">live</StatusBadge>

@@ -129,7 +129,7 @@ func planned(t *testing.T, s *Store) Work {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	jobs, err := s.ClaimWork(ctx, 1)
+	jobs, err := s.ClaimWork(ctx, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

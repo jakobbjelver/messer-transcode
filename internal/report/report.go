@@ -8,7 +8,6 @@ package report
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -29,6 +28,10 @@ type Window struct {
 
 // Run is one window and what happened inside it.
 type Run struct {
+	// ID is the run's identity: the unix start of the window, and the key the
+	// ledger stores. It is stable across schedule edits, which a derived run
+	// never was.
+	ID int64 `json:"id"`
 	Window
 	// Open is true for the window containing now, which may be half done.
 	Open bool
@@ -94,140 +97,99 @@ func (r Run) Utilisation(now time.Time) float64 {
 
 // Windows returns the last n window occurrences up to now, newest first,
 // including the one in progress.
+//
+// The arithmetic moved to config.Occurrence so the ledger, the claim path and
+// this report all resolve a window the same way — three copies of "does this
+// wrap past midnight" is how a schedule change silently re-cuts history.
 func Windows(sched config.Schedule, now time.Time, n int) []Window {
-	loc := time.UTC
-	if sched.Timezone != "" {
-		if l, err := time.LoadLocation(sched.Timezone); err == nil {
-			loc = l
-		}
-	}
-	local := now.In(loc)
-
-	var out []Window
-	for day := 0; day < 400 && len(out) < n; day++ {
-		d := local.AddDate(0, 0, -day)
-		spec, kind := sched.Weekday, "weekday"
-		if wd := d.Weekday(); wd == time.Saturday || wd == time.Sunday {
-			spec, kind = sched.Weekend, "weekend"
-		}
-		startMin, endMin, err := parseWindow(spec)
-		if err != nil {
-			continue
-		}
-		start := time.Date(d.Year(), d.Month(), d.Day(), startMin/60, startMin%60, 0, 0, loc)
-		endDay := d
-		if endMin <= startMin {
-			endDay = d.AddDate(0, 0, 1)
-		}
-		end := time.Date(endDay.Year(), endDay.Month(), endDay.Day(), endMin/60, endMin%60, 0, 0, loc)
-
-		// A window that has not started yet belongs to the future; skip it
-		// rather than reporting an empty run for tonight.
-		if start.After(local) {
-			continue
-		}
-		out = append(out, Window{Start: start, End: end, Spec: spec, Kind: kind})
+	occs := sched.PreviousOccurrences(now, n)
+	out := make([]Window, 0, len(occs))
+	for _, o := range occs {
+		out = append(out, Window{Start: o.Start, End: o.End, Spec: o.Spec, Kind: o.Kind})
 	}
 	return out
 }
 
-// Collect builds the report for the last n runs.
+// Collect builds the report for the last n runs from the ledger.
+//
+// It first materialises the windows that have started (so an empty run is still
+// a row) and then reads what the store recorded, rather than recomputing the
+// past from the schedule this request happens to see.
 func Collect(ctx context.Context, st *store.Store, sched config.Schedule, now time.Time, n int) ([]Run, error) {
-	windows := Windows(sched, now, n)
-	runs := make([]Run, 0, len(windows))
-	for _, w := range windows {
-		r, err := one(ctx, st, w, now)
-		if err != nil {
-			return nil, err
-		}
-		runs = append(runs, r)
+	if n <= 0 {
+		return nil, nil
 	}
-	return runs, nil
+	if err := st.SyncRuns(ctx, sched.PreviousOccurrences(now, n), now); err != nil {
+		return nil, fmt.Errorf("sync runs: %w", err)
+	}
+
+	// Read deeper than n: a manual run (a forced window) shares the ledger and
+	// interleaves with the scheduled ones.
+	rows, err := st.RunRows(ctx, n*2+10)
+	if err != nil {
+		return nil, fmt.Errorf("read runs: %w", err)
+	}
+	ids := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	aggs, err := st.RunAggregates(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate runs: %w", err)
+	}
+
+	out := make([]Run, 0, n)
+	for _, row := range rows {
+		if len(out) >= n {
+			break
+		}
+		out = append(out, FromRow(row, aggs[row.ID], now))
+	}
+	return out, nil
 }
 
-func one(ctx context.Context, st *store.Store, w Window, now time.Time) (Run, error) {
-	r := Run{Window: w, Open: !now.Before(w.Start) && now.Before(w.End)}
-	from, to := w.Start.Unix(), w.End.Unix()
-	db := st.DB()
-
-	// Finished work inside the window's span.
-	row := db.QueryRowContext(ctx, `
-SELECT COUNT(*),
-       COALESCE(SUM(CASE WHEN bytes_before > 0 THEN bytes_before ELSE size_bytes END), 0),
-       COALESCE(SUM(CASE WHEN bytes_after  > 0 THEN bytes_after  ELSE size_bytes END), 0),
-       COALESCE(SUM(CASE WHEN started_at > 0 AND finished_at > started_at
-                         THEN finished_at - started_at ELSE 0 END), 0)
-FROM files
-WHERE finished_at IS NOT NULL AND finished_at >= ? AND finished_at < ?`, from, to)
-	if err := row.Scan(&r.Done, &r.Before, &r.After, &r.BusySeconds); err != nil {
-		return r, fmt.Errorf("run %s: %w", w.Start.Format(time.DateOnly), err)
+// FromRow turns a ledger row and its aggregates into the report's shape.
+func FromRow(row store.RunRow, agg store.RunAggregate, now time.Time) Run {
+	w := Window{
+		Start: time.Unix(row.StartAt, 0).In(time.Local),
+		Spec:  row.Spec,
+		Kind:  row.Kind,
 	}
-
-	if r.Done > 0 {
-		_ = db.QueryRowContext(ctx, `
-SELECT COUNT(*), AVG(vmaf), MIN(vmaf) FROM files
-WHERE finished_at IS NOT NULL AND vmaf > 0 AND finished_at >= ? AND finished_at < ?`,
-			from, to).Scan(&r.VmafN, &r.VmafMean, &r.VmafMin)
-		_ = db.QueryRowContext(ctx, `
-SELECT
-  COALESCE(SUM(CASE WHEN decision='remux' THEN 1 ELSE 0 END), 0),
-  COALESCE(SUM(CASE WHEN decision='encode' THEN 1 ELSE 0 END), 0)
-FROM files WHERE finished_at IS NOT NULL AND finished_at >= ? AND finished_at < ?`, from, to).
-			Scan(&r.Remuxed, &r.Encoded)
+	if row.EndAt > 0 {
+		w.End = time.Unix(row.EndAt, 0).In(time.Local)
 	}
-
-	// Failures are stamped by updated_at: a file that failed has no
-	// finished_at, and updated_at is when the failure was recorded.
-	r.FailedCodes = map[string]int{}
-	rows, err := db.QueryContext(ctx, `
-SELECT COALESCE(NULLIF(last_error_code,''), 'E_UNKNOWN'), COUNT(*)
-FROM files
-WHERE state='failed' AND updated_at >= ? AND updated_at < ?
-GROUP BY 1`, from, to)
-	if err != nil {
-		return r, err
+	r := Run{
+		ID:          row.ID,
+		Window:      w,
+		Open:        row.ClosedAt == 0 && now.After(w.Start),
+		Done:        agg.Done,
+		Before:      agg.Before,
+		After:       agg.After,
+		BusySeconds: agg.BusySeconds,
+		Encoded:     agg.Encoded,
+		Remuxed:     agg.Remuxed,
+		VmafN:       agg.VmafN,
 	}
-	for rows.Next() {
-		var code string
-		var c int
-		if err := rows.Scan(&code, &c); err != nil {
-			_ = rows.Close()
-			return r, err
+	if agg.VmafN > 0 {
+		r.VmafMean = agg.VmafSum / float64(agg.VmafN)
+		r.VmafMin = agg.VmafMin
+	}
+	for code, n := range agg.FailedCodes {
+		if r.FailedCodes == nil {
+			r.FailedCodes = map[string]int{}
 		}
-		r.FailedCodes[code] = c
-		r.Failed += c
+		r.FailedCodes[code] += n
+		r.Failed += n
 	}
-	_ = rows.Close()
-
-	r.SkippedCodes = map[string]int{}
-	rows, err = db.QueryContext(ctx, `
-SELECT COALESCE(NULLIF(reason_code,''), 'R_UNKNOWN'), COUNT(*)
-FROM files
-WHERE state='skipped' AND updated_at >= ? AND updated_at < ?
-GROUP BY 1`, from, to)
-	if err != nil {
-		return r, err
-	}
-	for rows.Next() {
-		var code string
-		var c int
-		if err := rows.Scan(&code, &c); err != nil {
-			_ = rows.Close()
-			return r, err
+	for code, n := range agg.SkipCodes {
+		if r.SkippedCodes == nil {
+			r.SkippedCodes = map[string]int{}
 		}
-		r.SkippedCodes[code] = c
-		r.Skipped += c
+		r.SkippedCodes[code] += n
+		r.Skipped += n
 	}
-	_ = rows.Close()
-
 	r.BusyPercent = r.Utilisation(now)
-	if len(r.FailedCodes) == 0 {
-		r.FailedCodes = nil
-	}
-	if len(r.SkippedCodes) == 0 {
-		r.SkippedCodes = nil
-	}
-	return r, nil
+	return r
 }
 
 // parseWindow splits HH:MM-HH:MM into minutes since midnight.
@@ -292,5 +254,3 @@ func sortedCodes(m map[string]int) []string {
 	}
 	return out
 }
-
-var _ = sql.ErrNoRows
