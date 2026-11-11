@@ -1,5 +1,7 @@
-import { ArrowsClockwise } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
+
 import { Page } from "@/components/page";
+import { RefreshButton } from "@/components/refresh-button";
 import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,9 +11,9 @@ import { SettingsSection } from "@/components/ui/settings-section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Time } from "@/components/ui/time";
-import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
+import { api, asApiError } from "@/lib/api";
 import { bytes, duration } from "@/lib/format";
+import { qk } from "@/lib/keys";
 import type { HealthCheck } from "@/lib/types";
 
 const CHECK_STATUS = {
@@ -21,17 +23,19 @@ const CHECK_STATUS = {
 } as const;
 
 export function SettingsPage() {
-  const config = useApi("config", api.config);
-  const health = useApi("health", api.health);
+  const config = useQuery({ queryKey: qk.config, queryFn: api.config });
+  const health = useQuery({ queryKey: qk.health, queryFn: api.health, staleTime: 30_000 });
+  const configError = config.error ? asApiError(config.error) : null;
+  const healthError = health.error ? asApiError(health.error) : null;
 
-  if (config.error) {
+  if (configError) {
     return (
       <Page>
         <ErrorState
-          code={config.error.code}
+          code={configError.code}
           title="Settings did not load"
-          description={config.error.message}
-          actions={<Button onClick={config.reload}>Try again</Button>}
+          description={configError.message}
+          actions={<Button onClick={() => void config.refetch()}>Try again</Button>}
         />
       </Page>
     );
@@ -44,16 +48,13 @@ export function SettingsPage() {
         title="What this orchestrator is and how it is configured"
         description="Read-only: the config file is the interface (plan D10), and the CLI is how it changes."
         actions={
-          <Button
-            variant="outline"
-            onClick={() => {
-              config.reload();
-              health.reload();
+          <RefreshButton
+            busy={config.isFetching || health.isFetching}
+            onRefresh={() => {
+              void config.refetch();
+              void health.refetch();
             }}
-          >
-            <ArrowsClockwise />
-            Refresh
-          </Button>
+          />
         }
       />
 
@@ -92,12 +93,12 @@ export function SettingsPage() {
         eyebrow="health"
         aside={health.data ? `verdict ${health.data.status} · ${health.data.duration_ms} ms` : undefined}
       >
-        {health.error ? (
+        {healthError ? (
           <ErrorState
-            code={health.error.code}
+            code={healthError.code}
             title="The health check did not answer"
-            description={health.error.message}
-            actions={<Button onClick={health.reload}>Try again</Button>}
+            description={healthError.message}
+            actions={<Button onClick={() => void health.refetch()}>Try again</Button>}
           />
         ) : !health.data ? (
           <Skeleton className="h-40 w-full" />

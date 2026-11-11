@@ -1,34 +1,30 @@
-import { ArrowLeft } from "@phosphor-icons/react";
-import { Link, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { useParams } from "react-router-dom";
 
+import { BackButton } from "@/components/back-button";
 import { Page } from "@/components/page";
 import { Section } from "@/components/section";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Time } from "@/components/ui/time";
-import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
+import { api, asApiError } from "@/lib/api";
 import { bytes, duration, fileName, gb, kbps } from "@/lib/format";
+import { qk } from "@/lib/keys";
 import { statePresentation } from "@/lib/status";
 
 export function FilePage() {
   const { id } = useParams();
   const fileID = Number(id);
   const valid = Number.isFinite(fileID) && fileID > 0;
-  const detail = useApi(valid ? `file:${fileID}` : "file:invalid", () => api.file(fileID));
+  const detail = useQuery({ queryKey: qk.file(fileID), queryFn: () => api.file(fileID), enabled: valid });
+  const detailError = detail.error ? asApiError(detail.error) : null;
 
-  const back = (
-    <Button variant="outline" asChild>
-      <Link to="/queue">
-        <ArrowLeft weight="bold" />
-        Queue
-      </Link>
-    </Button>
-  );
+  // The origin comes from the link that opened this page — the queue's filter,
+  // the dashboard or a run — so the label is never a guess.
+  const back = <BackButton parent="/queue" />;
 
   if (!valid) {
     return (
@@ -38,13 +34,13 @@ export function FilePage() {
     );
   }
 
-  if (detail.error) {
+  if (detailError) {
     return (
       <Page>
         <ErrorState
-          code={detail.error.code}
-          title={detail.error.status === 404 ? "No such file" : "The file did not load"}
-          description={detail.error.message}
+          code={detailError.code}
+          title={detailError.status === 404 ? "No such file" : "The file did not load"}
+          description={detailError.message}
           actions={back}
         />
       </Page>

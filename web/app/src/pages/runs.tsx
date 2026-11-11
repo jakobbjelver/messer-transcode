@@ -1,5 +1,7 @@
-import { ArrowsClockwise } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
+
 import { Page } from "@/components/page";
+import { RefreshButton } from "@/components/refresh-button";
 import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -8,24 +10,25 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
+import { api, asApiError } from "@/lib/api";
 import { gb, pct, day, timeOfDay } from "@/lib/format";
+import { qk } from "@/lib/keys";
 import { scheduleLabel } from "@/lib/schedule";
 
 const LAST = 30;
 
 export function RunsPage() {
-  const runs = useApi(`runs:${LAST}`, () => api.runs(LAST));
+  const runs = useQuery({ queryKey: qk.runs(LAST), queryFn: () => api.runs(LAST) });
+  const runsError = runs.error ? asApiError(runs.error) : null;
 
-  if (runs.error) {
+  if (runsError) {
     return (
       <Page>
         <ErrorState
-          code={runs.error.code}
+          code={runsError.code}
           title="The runs did not load"
-          description={runs.error.message}
-          actions={<Button onClick={runs.reload}>Try again</Button>}
+          description={runsError.message}
+          actions={<Button onClick={() => void runs.refetch()}>Try again</Button>}
         />
       </Page>
     );
@@ -42,10 +45,7 @@ export function RunsPage() {
             : "Reading the schedule…"
         }
         actions={
-          <Button variant="outline" onClick={runs.reload}>
-            <ArrowsClockwise />
-            Refresh
-          </Button>
+          <RefreshButton onRefresh={() => void runs.refetch()} busy={runs.isFetching} />
         }
       />
 

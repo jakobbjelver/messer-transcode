@@ -1,4 +1,5 @@
 import { ArrowLeft, ArrowRight } from "@phosphor-icons/react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { Page } from "@/components/page";
@@ -13,9 +14,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
+import { api, asApiError } from "@/lib/api";
 import { bytes, fileName } from "@/lib/format";
+import { qk } from "@/lib/keys";
 import { statePresentation } from "@/lib/status";
 
 const PER_PAGE = 100;
@@ -39,15 +40,25 @@ export function QueuePage() {
   const active =
     FILTERS.find((f) => (f.state ?? "") === state && (f.decision ?? "") === decision)?.key ?? "all";
 
-  const files = useApi(`files:${state}:${decision}:${page}`, () =>
-    api.files({
-      state: state || undefined,
-      decision: decision || undefined,
-      limit: PER_PAGE + 1,
-      offset: (page - 1) * PER_PAGE,
-    }),
-  );
-  const status = useApi("status", api.status);
+  // Where a detail page should come back to: this filter, this page.
+  const here = "/queue" + (params.toString() ? `?${params.toString()}` : "");
+
+  const filter = {
+    state: state || undefined,
+    decision: decision || undefined,
+    limit: PER_PAGE + 1,
+    offset: (page - 1) * PER_PAGE,
+  };
+  const files = useQuery({
+    queryKey: qk.files(filter),
+    queryFn: () => api.files(filter),
+    // A page change keeps the previous rows on screen instead of flashing
+    // skeletons: the table is 100 rows and the fetch is local.
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  });
+  const filesError = files.error ? asApiError(files.error) : null;
+  const status = useQuery({ queryKey: qk.status, queryFn: api.status, staleTime: 5_000 });
   const { pulse } = usePulse();
   const dash = pulse?.dashboard ?? status.data?.dashboard ?? null;
 
@@ -118,16 +129,16 @@ export function QueuePage() {
           }
         />
 
-        {files.error ? (
+        {filesError ? (
           <div className="mt-4">
             <ErrorState
-              code={files.error.code}
+              code={filesError.code}
               title="The queue did not load"
-              description={files.error.message}
-              actions={<Button onClick={files.reload}>Try again</Button>}
+              description={filesError.message}
+              actions={<Button onClick={() => void files.refetch()}>Try again</Button>}
             />
           </div>
-        ) : files.loading && !files.data ? (
+        ) : files.isPending && !files.data ? (
           <div className="mt-4 flex flex-col gap-2">
             {Array.from({ length: 6 }, (_, i) => (
               <Skeleton key={i} className="h-9 w-full" />
@@ -166,6 +177,7 @@ export function QueuePage() {
                       <TableCell className="max-w-[10rem] truncate sm:max-w-[22rem]">
                         <Link
                           to={`/files/${row.id}`}
+                          state={{ from: { to: here, label: "Queue" } }}
                           title={row.path}
                           className="underline-offset-4 hover:underline"
                         >

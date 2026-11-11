@@ -1,4 +1,5 @@
 import { ArrowRight, ClockCounterClockwise, FilmStrip } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { Page } from "@/components/page";
@@ -15,31 +16,39 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Stat } from "@/components/ui/stat";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
+import { api, asApiError } from "@/lib/api";
 import { bytes, clock, day, gb, pct, timeOfDay } from "@/lib/format";
+import { qk } from "@/lib/keys";
 import { idleNote, windowLabel } from "@/lib/schedule";
 import { statePresentation } from "@/lib/status";
 import type { Run } from "@/lib/types";
 
 export function OverviewPage() {
-  const status = useApi("status", api.status);
-  const runs = useApi("runs:5", () => api.runs(5));
-  const events = useApi("events:14", () => api.events(14));
+  const status = useQuery({
+    queryKey: qk.status,
+    queryFn: api.status,
+    staleTime: 5_000,
+    // The floor, not the mechanism: the stream writes these numbers as they
+    // move. If the stream is down this refetch is what keeps the page honest.
+    refetchInterval: 30_000,
+  });
+  const runs = useQuery({ queryKey: qk.runs(5), queryFn: () => api.runs(5) });
+  const events = useQuery({ queryKey: qk.events(14), queryFn: () => api.events(14) });
   const { pulse, connected } = usePulse();
+  const statusError = status.error ? asApiError(status.error) : null;
 
   const dash = pulse?.dashboard ?? status.data?.dashboard ?? null;
   const live = pulse?.live ?? status.data?.live ?? null;
   const window = pulse?.window ?? status.data?.window ?? null;
 
-  if (status.error && !dash) {
+  if (statusError && !dash) {
     return (
       <Page>
         <ErrorState
-          code={status.error.code}
+          code={statusError.code}
           title="The orchestrator did not answer"
-          description={status.error.message}
-          actions={<Button onClick={status.reload}>Try again</Button>}
+          description={statusError.message}
+          actions={<Button onClick={() => void status.refetch()}>Try again</Button>}
         />
       </Page>
     );
@@ -72,12 +81,20 @@ export function OverviewPage() {
           </>
         }
         actions={
-          <Button asChild variant="outline">
-            <Link to="/queue">
-              The queue
-              <ArrowRight weight="bold" />
-            </Link>
-          </Button>
+          <>
+            <Button asChild variant="outline">
+              <Link to="/runs">
+                All runs
+                <ArrowRight weight="bold" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/queue">
+                The queue
+                <ArrowRight weight="bold" />
+              </Link>
+            </Button>
+          </>
         }
       />
 
@@ -109,6 +126,7 @@ export function OverviewPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Link
                   to={`/files/${live.file_id}`}
+                  state={{ from: { to: "/", label: "Overview" } }}
                   className="min-w-0 truncate font-mono text-[12px] text-[var(--foreground)] underline-offset-4 hover:underline"
                   title={live.path}
                 >
@@ -144,10 +162,7 @@ export function OverviewPage() {
         eyebrow="the runs"
         aside={
           <>
-            {runs.data?.runs.length ?? 5} recent ·{" "}
-            <Link to="/runs" className="underline underline-offset-4">
-              all runs
-            </Link>
+            {runs.data?.runs.length ?? 5} recent
           </>
         }
       >
@@ -198,6 +213,7 @@ export function OverviewPage() {
                     {e.file_id ? (
                       <Link
                         to={`/files/${e.file_id}`}
+                        state={{ from: { to: "/", label: "Overview" } }}
                         className="underline-offset-4 hover:underline"
                       >
                         {e.message}
