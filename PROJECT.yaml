@@ -1,0 +1,42 @@
+# PROJECT.yaml — Messer Transcode
+# The reference implementation for the default Go + React/Vite service. The facts here are
+# cross-checked by messer-projects/scripts/audit.py; keep them true.
+
+schema: 1
+standard: "1.0"
+name: messer-transcode
+display: Messer Transcode
+family: messer
+status: active
+tier: service
+skill: messer-transcode
+
+stack:
+  backend: go
+  frontend: react-vite
+  router: react-router       # exception: predates the TanStack Router default
+  data: sqlite
+  ui: messer-ui
+  brand: transcode
+  port: 1
+
+deploy:
+  kind: docker
+  image: ghcr.io/jakobbjelver/messer-transcode
+  stack: video-stack
+  service: transcode
+  domain: transcode.messer.wtf
+  dev_domain: transcode-dev.messer.wtf
+
+dev:
+  command: make web-dev
+  ports: [5299, 8299]
+  pm2: transcode-dev
+  action: actions/actions.json
+
+health: /api/v1/health
+
+exceptions:
+  - id: react-router
+    reason: React Router predates the TanStack Router default; the SPA has five routes and no planned routing change.
+    expires: 2027-01-31
