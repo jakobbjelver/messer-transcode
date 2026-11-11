@@ -1,3 +1,4 @@
+import { ArrowsClockwise } from "@phosphor-icons/react";
 import { Page } from "@/components/page";
 import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
@@ -43,10 +44,14 @@ export function SettingsPage() {
         title="What this orchestrator is and how it is configured"
         description="Read-only: the config file is the interface (plan D10), and the CLI is how it changes."
         actions={
-          <Button variant="outline" onClick={() => {
-            config.reload();
-            health.reload();
-          }}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              config.reload();
+              health.reload();
+            }}
+          >
+            <ArrowsClockwise />
             Refresh
           </Button>
         }
