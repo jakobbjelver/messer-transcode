@@ -25,6 +25,10 @@ export function ScheduleGrid({
   const [grid, setGrid] = useState<Grid>(() => gridFromWindows(windows));
   const painting = useRef<{ value: boolean } | null>(null);
   const lastEmitted = useRef<string>(JSON.stringify(windows ?? []));
+  // What the parent last gave us (or what we last emitted). A drag fires many
+  // pointer events before React re-renders, so the prop alone goes stale inside
+  // one gesture — and a stale list loses the block the user is painting over.
+  const current = useRef<ScheduleWindow[]>(windows ?? []);
 
   // The draft is the source while the user is not painting: a document edit or
   // a discard must be able to move the grid.
@@ -32,27 +36,28 @@ export function ScheduleGrid({
     const key = JSON.stringify(windows ?? []);
     if (key === lastEmitted.current) return;
     lastEmitted.current = key;
+    current.current = windows ?? [];
     setGrid(gridFromWindows(windows));
   }, [windows]);
 
-  const commit = useCallback(
-    (next: Grid) => {
-      const out = windowsFromGrid(next, windows ?? []);
-      lastEmitted.current = JSON.stringify(out);
-      onChange(out);
+  const paint = useCallback(
+    (day: number, cell: number, value: boolean) => {
+      setGrid((prev) => {
+        if (prev[day][cell] === value) return prev;
+        const next = prev.map((row) => [...row]);
+        next[day][cell] = value;
+        // The emit happens here, once per change, from the value that is about
+        // to be rendered — not from a stale prop and not as a side effect
+        // inside a state updater.
+        const out = windowsFromGrid(next, current.current);
+        current.current = out;
+        lastEmitted.current = JSON.stringify(out);
+        onChange(out);
+        return next;
+      });
     },
-    [onChange, windows],
+    [onChange],
   );
-
-  const paint = (day: number, cell: number, value: boolean) => {
-    setGrid((prev) => {
-      if (prev[day][cell] === value) return prev;
-      const next = prev.map((row) => [...row]);
-      next[day][cell] = value;
-      commit(next);
-      return next;
-    });
-  };
 
   const start = (day: number, cell: number) => {
     painting.current = { value: !grid[day][cell] };
@@ -76,7 +81,9 @@ export function ScheduleGrid({
     };
   }, []);
 
-  const blocks = windowsFromGrid(grid);
+  // The stored list, not the canonical cover of it: two overlapping windows are
+  // two windows, even though the grid shows their union as three rectangles.
+  const blocks = current.current.length > 0 ? current.current : windowsFromGrid(grid);
   const total = blocks.reduce((n, w) => n + w.days.length * (windowLen(w) / 3600), 0);
 
   return (
