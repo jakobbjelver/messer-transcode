@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -18,6 +19,33 @@ import (
 	"github.com/jakobbjelver/messer-transcode/internal/store"
 	"github.com/jakobbjelver/messer-transcode/internal/transcode"
 )
+
+// liveConfig is the config the node is working from, swapped by the reload
+// loop and read by every job. A pointer behind a mutex, not a value copy: the
+// reads are frequent and the writes are one every few seconds at most.
+type liveConfig struct {
+	mu  sync.RWMutex
+	cur *config.Config
+}
+
+func (l *liveConfig) get() *config.Config {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.cur
+}
+
+// set installs next and reports whether it differs from what was there.
+func (l *liveConfig) set(next *config.Config) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	prev, err1 := config.Render(l.cur)
+	cur, err2 := config.Render(next)
+	if err1 == nil && err2 == nil && string(prev) == string(cur) {
+		return false
+	}
+	l.cur = next
+	return true
+}
 
 func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	fs := flag.NewFlagSet("node", flag.ContinueOnError)
@@ -113,18 +141,27 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 		}
 	}
 
+	// The node re-reads its config on a ticker, so a change made on the
+	// configuration screen reaches the machine that does the work without a
+	// restart. A job already running keeps the config it started with: its
+	// closures captured that pointer, and half a job under new paths is worse
+	// than one more file under the old ones.
+	live := &liveConfig{cur: cfg}
+
 	agent := node.New(cfg, client, journal, logEvent)
 	agent.MaxJobs = 0
 	if *once {
 		agent.MaxJobs = 1
 	}
 
-	roots := map[string]string{}
-	for _, lib := range cfg.Libraries {
-		roots[lib.Name] = lib.Root
-	}
 	libraryFor := func(job store.Work) (string, error) {
-		root := roots[job.Library]
+		var root string
+		for _, lib := range live.get().Libraries {
+			if lib.Name == job.Library {
+				root = lib.Root
+				break
+			}
+		}
 		if root == "" {
 			return "", fmt.Errorf("library %q is not configured on this node", job.Library)
 		}
@@ -137,7 +174,7 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 		logf := func(stage, msg string) {
 			logEvent(transcode.Event{FileID: job.ID, Path: job.Path, Stage: stage, Message: msg})
 		}
-		_, _, err := transcode.EnsureSource(ctx, cfg, job.ID, job.Path, logf)
+		_, _, err := transcode.EnsureSource(ctx, live.get(), job.ID, job.Path, logf)
 		return err
 	}
 
@@ -147,7 +184,7 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 			return nil, err
 		}
 		_, commit, err := transcode.Split(ctx, transcode.Options{
-			Config:   cfg,
+			Config:   live.get(),
 			Reporter: client,
 			Log:      logEvent,
 		}, transcode.Task{
@@ -163,13 +200,14 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	// Refuse to start a file there is no room for: a full scratch disk turns
 	// into a failed encode and a spent attempt otherwise.
 	agent.DiskGuard = func() error {
-		free, err := transcode.FreeGB(cfg.Paths.Scratch)
+		c := live.get()
+		free, err := transcode.FreeGB(c.Paths.Scratch)
 		if err != nil {
 			return err
 		}
-		if free < float64(cfg.Safety.MinFreeGB) {
+		if free < float64(c.Safety.MinFreeGB) {
 			return fmt.Errorf("scratch has %.0f GB free, %d GB required",
-				free, cfg.Safety.MinFreeGB)
+				free, c.Safety.MinFreeGB)
 		}
 		return nil
 	}
@@ -178,6 +216,32 @@ func cmdNode(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	// the claim loop but deliberately does not cancel the encode in flight.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Reload loop: cheap, and the ticker is the only thing here that is not
+	// already on a goroutine.
+	go func() {
+		t := time.NewTicker(3 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				next, err := config.Load(*cfgPath)
+				if err != nil {
+					continue // an invalid file is the server's business to report
+				}
+				// The token is a flag or a secret file, never in the config.
+				if next.Server.Token == "" {
+					next.Server.Token = cfg.Server.Token
+				}
+				if live.set(next) {
+					agent.SetConfig(next)
+					logEvent(transcode.Event{Stage: "config", Message: "configuration reloaded"})
+				}
+			}
+		}
+	}()
 
 	go func() {
 		<-ctx.Done()
