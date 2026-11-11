@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { byGroup, showValue, summaryLine } from "@/lib/config";
-import type { Change, Diff, Problem } from "@/lib/types";
+import type { Change, CronLine, Diff, Problem } from "@/lib/types";
 
 /**
  * What a save would change, and the confirmation that goes with it.
@@ -30,6 +30,7 @@ export function DiffDialog({
   problems,
   busy,
   conflict,
+  cron,
   title = "Review this change",
   confirmLabel = "Save it",
   onConfirm,
@@ -40,6 +41,8 @@ export function DiffDialog({
   problems: Problem[];
   busy?: boolean;
   conflict?: { headRev: number } | null;
+  /** Present when the draft changes the schedule: its projection into cron. */
+  cron?: CronLine[];
   title?: string;
   confirmLabel?: string;
   onConfirm: (message: string) => void;
@@ -66,6 +69,20 @@ export function DiffDialog({
         </DialogHeader>
 
         <DialogBody className="flex flex-col gap-4">
+          {cron && cron.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              <div className="m-eyebrow text-[var(--text-3)]">the same schedule as cron</div>
+              <div className="m-data rounded-lg border bg-[var(--surface)] p-3 text-xs leading-relaxed">
+                {cron.map((l) => (
+                  <div key={l.open + l.close} className="flex flex-col gap-0.5 py-1 first:pt-0 last:pb-0">
+                    <span className="text-[var(--text-3)]">{l.window}</span>
+                    <span>{l.open}   # opens</span>
+                    <span>{l.close}   # closes</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {problems.length > 0 ? (
             <ul className="flex flex-col gap-1.5 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
               {problems.map((p) => (

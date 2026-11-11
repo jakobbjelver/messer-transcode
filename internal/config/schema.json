@@ -5,9 +5,19 @@
   "description": "Shape, types, enums and ranges for config.json. Cross-field rules that a schema cannot express live in Check().",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "libraries", "schedule", "paths", "quality", "rules", "safety"],
+  "required": [
+    "version",
+    "libraries",
+    "schedule",
+    "paths",
+    "quality",
+    "rules",
+    "safety"
+  ],
   "properties": {
-    "version": { "const": 1 },
+    "version": {
+      "const": 1
+    },
     "libraries": {
       "type": "array",
       "minItems": 1,
@@ -15,19 +25,35 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "root", "extensions"],
+        "required": [
+          "name",
+          "root",
+          "extensions"
+        ],
         "properties": {
-          "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$" },
-          "root": { "type": "string", "pattern": "^/" },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
+          },
+          "root": {
+            "type": "string",
+            "pattern": "^/"
+          },
           "extensions": {
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,
-            "items": { "type": "string", "pattern": "^\\.[a-z0-9]{1,10}$" }
+            "items": {
+              "type": "string",
+              "pattern": "^\\.[a-z0-9]{1,10}$"
+            }
           },
           "exclude": {
             "type": "array",
-            "items": { "type": "string", "minLength": 1 }
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }
@@ -35,77 +61,231 @@
     "schedule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["weekday", "weekend", "drain_before_minutes", "timezone"],
+      "required": [
+        "drain_before_minutes",
+        "timezone"
+      ],
       "properties": {
-        "weekday": { "$ref": "#/$defs/window" },
-        "weekend": { "$ref": "#/$defs/window" },
-        "drain_before_minutes": { "type": "integer", "minimum": 0, "maximum": 120 },
-        "timezone": { "type": "string", "minLength": 1 }
+        "windows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "days",
+              "start",
+              "end"
+            ],
+            "properties": {
+              "days": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "mon",
+                    "tue",
+                    "wed",
+                    "thu",
+                    "fri",
+                    "sat",
+                    "sun"
+                  ]
+                }
+              },
+              "start": {
+                "$ref": "#/$defs/clock"
+              },
+              "end": {
+                "$ref": "#/$defs/clock"
+              }
+            }
+          }
+        },
+        "weekday": {
+          "$ref": "#/$defs/window",
+          "deprecated": true
+        },
+        "weekend": {
+          "$ref": "#/$defs/window",
+          "deprecated": true
+        },
+        "drain_before_minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 120
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "workers": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "encode": { "type": "integer", "minimum": 1, "maximum": 8 },
-        "probe": { "type": "integer", "minimum": 1, "maximum": 8 },
-        "ingest_buffer": { "type": "integer", "minimum": 0, "maximum": 8 }
+        "encode": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "probe": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "ingest_buffer": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        }
       }
     },
     "paths": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["scratch", "quarantine"],
+      "required": [
+        "scratch",
+        "quarantine"
+      ],
       "properties": {
-        "scratch": { "type": "string", "pattern": "^/" },
-        "quarantine": { "type": "string", "pattern": "^/" }
+        "scratch": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "quarantine": {
+          "type": "string",
+          "pattern": "^/"
+        }
       }
     },
     "quality": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "vmaf_target", "vmaf_tolerance", "table"],
+      "required": [
+        "mode",
+        "vmaf_target",
+        "vmaf_tolerance",
+        "table"
+      ],
       "properties": {
-        "mode": { "enum": ["table", "probe", "fixed"] },
-        "vmaf_target": { "type": "number", "minimum": 60, "maximum": 100 },
-        "vmaf_tolerance": { "type": "number", "minimum": 0, "maximum": 5 },
+        "mode": {
+          "enum": [
+            "table",
+            "probe",
+            "fixed"
+          ]
+        },
+        "vmaf_target": {
+          "type": "number",
+          "minimum": 60,
+          "maximum": 100
+        },
+        "vmaf_tolerance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5
+        },
         "table": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["codec", "height_gte", "kbps"],
+            "required": [
+              "codec",
+              "height_gte",
+              "kbps"
+            ],
             "properties": {
-              "codec": { "enum": ["h264", "hevc"] },
-              "height_gte": { "type": "integer", "minimum": 0, "maximum": 4320 },
-              "kbps": { "type": "integer", "minimum": 100, "maximum": 120000 },
-              "expected_vmaf": { "type": "number", "minimum": 50, "maximum": 100 }
+              "codec": {
+                "enum": [
+                  "h264",
+                  "hevc"
+                ]
+              },
+              "height_gte": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4320
+              },
+              "kbps": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 120000
+              },
+              "expected_vmaf": {
+                "type": "number",
+                "minimum": 50,
+                "maximum": 100
+              }
             }
           }
         },
-        "probe_outliers_above_kbps": { "type": "integer", "minimum": 0 },
-        "min_saving_pct": { "type": "integer", "minimum": 0, "maximum": 80 }
+        "probe_outliers_above_kbps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "min_saving_pct": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 80
+        }
       }
     },
     "audio": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "keep_languages": { "$ref": "#/$defs/languages" },
-        "keep_original_language": { "type": "boolean" },
-        "max_tracks": { "type": "integer", "minimum": 1, "maximum": 8 },
-        "drop_commentary": { "type": "boolean" },
+        "keep_languages": {
+          "$ref": "#/$defs/languages"
+        },
+        "keep_original_language": {
+          "type": "boolean"
+        },
+        "max_tracks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "drop_commentary": {
+          "type": "boolean"
+        },
         "transcode": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["from", "to", "kbps"],
+            "required": [
+              "from",
+              "to",
+              "kbps"
+            ],
             "properties": {
-              "from": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
-              "to": { "enum": ["eac3", "ac3", "aac", "opus"] },
-              "kbps": { "type": "integer", "minimum": 96, "maximum": 1536 }
+              "from": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "to": {
+                "enum": [
+                  "eac3",
+                  "ac3",
+                  "aac",
+                  "opus"
+                ]
+              },
+              "kbps": {
+                "type": "integer",
+                "minimum": 96,
+                "maximum": 1536
+              }
             }
           }
         }
@@ -115,10 +295,18 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "keep_languages": { "$ref": "#/$defs/languages" },
-        "drop_commentary": { "type": "boolean" },
-        "drop_closed_captions": { "type": "boolean" },
-        "keep_forced": { "type": "boolean" }
+        "keep_languages": {
+          "$ref": "#/$defs/languages"
+        },
+        "drop_commentary": {
+          "type": "boolean"
+        },
+        "drop_closed_captions": {
+          "type": "boolean"
+        },
+        "keep_forced": {
+          "type": "boolean"
+        }
       }
     },
     "rules": {
@@ -127,71 +315,214 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["when", "do", "code"],
+        "required": [
+          "when",
+          "do",
+          "code"
+        ],
         "properties": {
           "when": {
             "type": "object",
             "additionalProperties": false,
             "minProperties": 1,
             "properties": {
-              "height_lt": { "type": "integer", "minimum": 0, "maximum": 4320 },
-              "height_gte": { "type": "integer", "minimum": 0, "maximum": 4320 },
-              "bitrate_kbps_lt": { "type": "integer", "minimum": 0 },
-              "bitrate_kbps_gte": { "type": "integer", "minimum": 0 },
-              "codec": { "enum": ["h264", "hevc", "av1", "mpeg2video", "vc1"] },
-              "audio_codec_in": { "type": "array", "minItems": 1, "items": { "enum": ["truehd", "flac", "pcm_bluray", "pcm_s16le", "pcm_s24le", "dts", "dts-hd", "eac3", "ac3", "aac", "opus", "vorbis", "mp3"] } },
-              "audio_tracks_gt": { "type": "integer", "minimum": 0, "maximum": 64 },
-              "default": { "const": true }
+              "height_lt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4320
+              },
+              "height_gte": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4320
+              },
+              "bitrate_kbps_lt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "bitrate_kbps_gte": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "codec": {
+                "enum": [
+                  "h264",
+                  "hevc",
+                  "av1",
+                  "mpeg2video",
+                  "vc1"
+                ]
+              },
+              "audio_codec_in": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "enum": [
+                    "truehd",
+                    "flac",
+                    "pcm_bluray",
+                    "pcm_s16le",
+                    "pcm_s24le",
+                    "dts",
+                    "dts-hd",
+                    "eac3",
+                    "ac3",
+                    "aac",
+                    "opus",
+                    "vorbis",
+                    "mp3"
+                  ]
+                }
+              },
+              "audio_tracks_gt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "default": {
+                "const": true
+              }
             }
           },
-          "do": { "enum": ["skip", "remux", "encode", "quarantine"] },
-          "code": { "type": "string", "pattern": "^R_[A-Z0-9_]+$" }
+          "do": {
+            "enum": [
+              "skip",
+              "remux",
+              "encode",
+              "quarantine"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^R_[A-Z0-9_]+$"
+          }
         }
       }
     },
     "safety": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["min_free_gb", "size_ratio_min", "size_ratio_max", "duration_tolerance_s", "keep_quarantine_days", "verify_sample_seconds", "verify_vmaf", "max_attempts"],
+      "required": [
+        "min_free_gb",
+        "size_ratio_min",
+        "size_ratio_max",
+        "duration_tolerance_s",
+        "keep_quarantine_days",
+        "verify_sample_seconds",
+        "verify_vmaf",
+        "max_attempts"
+      ],
       "properties": {
-        "min_free_gb": { "type": "integer", "minimum": 1, "maximum": 10000 },
-        "size_ratio_min": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
-        "size_ratio_max": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
-        "duration_tolerance_s": { "type": "integer", "minimum": 0, "maximum": 30 },
-        "keep_quarantine_days": { "type": "integer", "minimum": 0, "maximum": 365 },
-        "verify_sample_seconds": { "type": "integer", "minimum": 5, "maximum": 600 },
-        "verify_vmaf": { "type": "boolean" },
-        "max_attempts": { "type": "integer", "minimum": 1, "maximum": 10 },
-        "quarantine": { "enum": ["copy", "off"] }
+        "min_free_gb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "size_ratio_min": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "size_ratio_max": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "duration_tolerance_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
+        },
+        "keep_quarantine_days": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 365
+        },
+        "verify_sample_seconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 600
+        },
+        "verify_vmaf": {
+          "type": "boolean"
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "quarantine": {
+          "enum": [
+            "copy",
+            "off"
+          ]
+        }
       }
     },
     "notify": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "radarr": { "type": "string", "pattern": "^https?://" },
-        "sonarr": { "type": "string", "pattern": "^https?://" },
-        "on": { "type": "array", "uniqueItems": true, "items": { "enum": ["replaced", "failed", "skipped"] } },
-        "jellyfin_refresh": { "type": "boolean" }
+        "radarr": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "sonarr": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "on": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "replaced",
+              "failed",
+              "skipped"
+            ]
+          }
+        },
+        "jellyfin_refresh": {
+          "type": "boolean"
+        }
       }
     },
     "server": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "listen": { "type": "string", "pattern": "^:[0-9]{2,5}$" },
-        "token": { "type": "string", "minLength": 16 },
-        "url": { "type": "string", "pattern": "^https?://" }
+        "listen": {
+          "type": "string",
+          "pattern": "^:[0-9]{2,5}$"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 16
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https?://"
+        }
       }
     }
   },
   "$defs": {
-    "window": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$" },
+    "window": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$"
+    },
     "languages": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "type": "string", "pattern": "^[a-z]{3}$" }
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z]{3}$"
+      }
+    },
+    "clock": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
     }
   }
 }

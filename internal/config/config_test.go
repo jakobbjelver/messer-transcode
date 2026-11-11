@@ -66,7 +66,8 @@ func TestDecodeRejectsUnknownKeys(t *testing.T) {
 func TestDecodeRejectsOutOfRange(t *testing.T) {
 	for _, tc := range []struct{ name, from, to string }{
 		{"vmaf above 100", `"vmaf_target": 95.0`, `"vmaf_target": 120.0`},
-		{"bad window", `"weekday": "00:30-05:30"`, `"weekday": "25:00-05:30"`},
+		{"bad window", `"start": "00:30", "end": "05:30"`, `"start": "25:00", "end": "05:30"`},
+		{"bad day", `"days": ["sat", "sun"]`, `"days": ["caturday"]`},
 		{"bad codec", `"codec": "h264", "height_gte": 2000`, `"codec": "vp9", "height_gte": 2000`},
 		{"zero workers", `"encode": 1`, `"encode": 0`},
 		{"root catalogue", `"root": "/Volumes/Media/Library"`, `"root": "/"`},
@@ -145,7 +146,11 @@ func TestCheckCatches(t *testing.T) {
 		},
 		{
 			name:   "window shorter than drain",
-			mutate: func(c *Config) { c.Schedule.Weekday = "05:00-05:10" },
+			mutate: func(c *Config) {
+				// The migrated config has windows; a legacy field would be
+				// ignored, which is what the migration is for.
+				c.Schedule.Windows = []ScheduleWindow{{Days: []string{"mon"}, Start: "05:00", End: "05:10"}}
+			},
 			want:   "not longer than drain_before_minutes",
 		},
 		{
@@ -270,5 +275,32 @@ func TestSchemaCompiles(t *testing.T) {
 	}
 	if len(Schema()) == 0 {
 		t.Fatal("Schema() returned nothing")
+	}
+}
+
+// Midnight is the end of the day, not the start of the next one.
+func TestWindowEndingAtMidnight(t *testing.T) {
+	w, err := ParseWindow("22:00-00:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.DurationMin() != 120 {
+		t.Fatalf("duration = %d minutes, want 120", w.DurationMin())
+	}
+	if w.EndMin != 24*60 {
+		t.Fatalf("end = %d, want 1440", w.EndMin)
+	}
+	// The same day, two hours later.
+	s := Schedule{Windows: []ScheduleWindow{{Days: []string{"mon"}, Start: "22:00", End: "00:00"}}, Timezone: "UTC"}
+	occ, ok := s.OccurrenceAt(time.Date(2026, 11, 9, 23, 30, 0, 0, time.UTC))
+	if !ok {
+		t.Fatal("23:30 monday should be inside a 22:00-00:00 window")
+	}
+	if !occ.End.Equal(time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("end = %s, want tuesday 00:00", occ.End)
+	}
+	// 23:59 must still be a valid whole-day window.
+	if _, err := ParseWindow("00:00-23:59"); err != nil {
+		t.Fatalf("whole-day window broke: %v", err)
 	}
 }

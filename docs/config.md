@@ -35,13 +35,30 @@ Hidden files and directories (`.something`) are always skipped.
 ## `schedule`
 
 ```json
-{ "weekday": "00:30-05:30", "weekend": "02:00-07:00",
-  "drain_before_minutes": 15, "timezone": "Europe/Copenhagen" }
+{
+  "windows": [
+    { "days": ["mon", "tue", "wed", "thu", "fri"], "start": "00:30", "end": "05:30" },
+    { "days": ["sat", "sun"], "start": "02:00", "end": "07:00" },
+    { "days": ["fri"], "start": "22:00", "end": "06:00" }
+  ],
+  "drain_before_minutes": 15,
+  "timezone": "Europe/Copenhagen"
+}
 ```
 
-Windows are `HH:MM-HH:MM` and may wrap past midnight (`23:00-03:00`). `drain_before_minutes` is
-how long before the window closes the server stops handing out new work so the in-flight file can
-finish; a window shorter than the drain is a validation error.
+A window is a set of days plus a clock range on each of those days. `days` names the day the
+window *starts* on, so the third example above is Friday night and runs into Saturday morning — one
+occurrence, not two. A window whose end is earlier than its start wraps past midnight, and `end:
+"00:00"` means midnight at the end of the day.
+
+`drain_before_minutes` is how long before a window closes the server stops handing out new work so
+the in-flight file can finish; a window shorter than the drain is a validation error.
+
+The pre-windows form (`"weekday": "00:30-05:30", "weekend": "02:00-07:00"`) is still accepted and
+converted to two windows on load — an old file keeps working, and the next save writes the new
+form. Windows are the only representation the rest of the program sees, and the config screen's
+grid editor is the canonical view of them: overlapping blocks are stored as the days that are on in
+each half hour.
 
 ## `workers`
 

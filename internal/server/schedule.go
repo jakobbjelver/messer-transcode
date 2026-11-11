@@ -46,40 +46,17 @@ func (s *Server) claimsAllowed(ctx context.Context, now time.Time) (bool, string
 	// schedule rather than to a refusal: refusing would look like an empty
 	// window and cost a night, while allowing is exactly what the config says.
 
-	loc := time.UTC
-	if s.config().Schedule.Timezone != "" {
-		if l, err := time.LoadLocation(s.config().Schedule.Timezone); err == nil {
-			loc = l
-		}
-	}
-	local := now.In(loc)
-
-	spec := s.config().Schedule.Weekday
-	if wd := local.Weekday(); wd == time.Saturday || wd == time.Sunday {
-		spec = s.config().Schedule.Weekend
-	}
-	start, end, err := parseWindow(spec)
-	if err != nil {
-		return false, RefusedWindow
-	}
-	if !withinWindow(local, start, end) {
+	// One source of truth for "is the window open": the occurrence arithmetic
+	// the report and the run ledger also use.
+	sched := s.config().Schedule
+	occ, ok := sched.OccurrenceAt(now)
+	if !ok {
 		return false, RefusedWindow
 	}
 
-	drain := time.Duration(s.config().Schedule.DrainBeforeMinutes) * time.Minute
-	if drain > 0 && minutesUntilClose(local, end) <= drain {
+	drain := time.Duration(sched.DrainBeforeMinutes) * time.Minute
+	if drain > 0 && occ.End.Sub(now) <= drain {
 		return false, RefusedDraining
 	}
 	return true, ""
-}
-
-// minutesUntilClose is how long the window has left, handling the wrap past
-// midnight the same way withinWindow does.
-func minutesUntilClose(now time.Time, end clockMinute) time.Duration {
-	cur := now.Hour()*60 + now.Minute()
-	left := end.minutes() - cur
-	if left < 0 {
-		left += 24 * 60
-	}
-	return time.Duration(left) * time.Minute
 }

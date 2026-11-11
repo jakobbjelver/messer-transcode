@@ -21,6 +21,18 @@ import (
 // A run is one occurrence of the window in the config, so this says nothing
 // about nights: point the schedule at 09:00–10:00 and it reports that window
 // the same way.
+// scheduleText is the schedule in words, for the report header.
+func scheduleText(s config.Schedule) string {
+	if len(s.Windows) == 0 {
+		return "no window"
+	}
+	var parts []string
+	for _, w := range s.Windows {
+		parts = append(parts, strings.Join(w.Days, ",")+" "+w.Start+"-"+w.End)
+	}
+	return strings.Join(parts, " · ")
+}
+
 func cmdReport(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -78,12 +90,16 @@ func cmdReport(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	}
 
 	if len(runs) == 0 {
-		say(stdout, "no runs yet — the first one starts at %s\n", cfg.Schedule.Weekday)
+		next := cfg.Schedule.PreviousOccurrences(now, 1)
+		if len(next) == 0 {
+			say(stdout, "no runs yet, and no window has opened\n")
+			return ExitOK
+		}
+		say(stdout, "no runs yet — the newest window was %s\n", next[0].Spec)
 		return ExitOK
 	}
 
-	say(stdout, "schedule  %s weekdays · %s weekends · %s\n",
-		cfg.Schedule.Weekday, cfg.Schedule.Weekend, cfg.Schedule.Timezone)
+	say(stdout, "schedule  %s · %s\n", scheduleText(cfg.Schedule), cfg.Schedule.Timezone)
 	say(stdout, "source    %s\n", source)
 	say(stdout, "\n")
 	var totalReclaimed, totalDone, totalFailed int64

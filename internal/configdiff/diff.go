@@ -245,73 +245,121 @@ func groupLabel(key string) string {
 // fieldLabels names the keys worth naming. Everything else falls back to the
 // path, which is still readable ("quality/table/2/kbps").
 var fieldLabels = map[string]string{
-	"start":                   "start",
-	"end":                     "end",
-	"days":                    "days",
-	"timezone":                "timezone",
-	"drain_before_minutes":    "drain before the window closes",
-	"mode":                    "mode",
-	"vmaf_target":             "VMAF target",
-	"vmaf_tolerance":          "VMAF tolerance",
-	"min_saving_pct":          "smallest saving worth an encode",
-	"keep_quarantine_days":    "quarantine keep window",
-	"min_free_gb":             "disk floor",
-	"size_ratio_max":          "largest allowed growth",
-	"verify_vmaf":             "verify VMAF",
-	"max_attempts":            "attempt budget",
-	"quarantine":              "quarantine mode",
-	"height_gte":              "from height",
-	"kbps":                    "bitrate",
-	"expected_vmaf":           "expected VMAF",
-	"codec":                   "codec",
-	"do":                      "decision",
-	"code":                    "code",
-	"encode":                  "encode workers",
-	"probe":                   "probe workers",
-	"scratch":                 "scratch path",
-	"root":                    "root path",
-	"listen":                  "listen address",
-	"url":                     "server URL",
-	"jellyfin_refresh":        "refresh Jellyfin",
-	"on":                      "notify on",
-	"keep_languages":          "keep languages",
-	"keep_original_language":  "keep the original language",
-	"max_tracks":              "maximum tracks",
-	"drop_commentary":         "drop commentary",
-	"drop_closed_captions":    "drop closed captions",
-	"keep_forced":             "keep forced subtitles",
-	"radius":                  "radius",
-	"token":                   "token",
-	"version":                 "version",
-	"transcode":               "audio conversion",
-	"from":                    "from codecs",
-	"to":                      "target codec",
-	"table":                   "bitrate ladder",
-	"rules":                   "rules",
-	"windows":                 "windows",
-	"when":                    "condition",
-	"bitrate_kbps_lt":         "bitrate below",
-	"bitrate_kbps_gte":        "bitrate at least",
-	"height_lt":               "below height",
-	"audio_codec_in":          "audio codec in",
-	"audio_tracks_gt":         "more audio tracks than",
-	"default":                 "default rule",
-	"verify_sample_seconds":   "verification sample",
+	"start":                     "start",
+	"end":                       "end",
+	"days":                      "days",
+	"timezone":                  "timezone",
+	"drain_before_minutes":      "drain before the window closes",
+	"mode":                      "mode",
+	"vmaf_target":               "VMAF target",
+	"vmaf_tolerance":            "VMAF tolerance",
+	"min_saving_pct":            "smallest saving worth an encode",
+	"keep_quarantine_days":      "quarantine keep window",
+	"min_free_gb":               "disk floor",
+	"size_ratio_max":            "largest allowed growth",
+	"verify_vmaf":               "verify VMAF",
+	"max_attempts":              "attempt budget",
+	"quarantine":                "quarantine mode",
+	"height_gte":                "from height",
+	"kbps":                      "bitrate",
+	"expected_vmaf":             "expected VMAF",
+	"codec":                     "codec",
+	"do":                        "decision",
+	"code":                      "code",
+	"encode":                    "encode workers",
+	"probe":                     "probe workers",
+	"scratch":                   "scratch path",
+	"root":                      "root path",
+	"listen":                    "listen address",
+	"url":                       "server URL",
+	"jellyfin_refresh":          "refresh Jellyfin",
+	"on":                        "notify on",
+	"keep_languages":            "keep languages",
+	"keep_original_language":    "keep the original language",
+	"max_tracks":                "maximum tracks",
+	"drop_commentary":           "drop commentary",
+	"drop_closed_captions":      "drop closed captions",
+	"keep_forced":               "keep forced subtitles",
+	"radius":                    "radius",
+	"token":                     "token",
+	"version":                   "version",
+	"transcode":                 "audio conversion",
+	"from":                      "from codecs",
+	"to":                        "target codec",
+	"table":                     "bitrate ladder",
+	"rules":                     "rules",
+	"windows":                   "windows",
+	"when":                      "condition",
+	"bitrate_kbps_lt":           "bitrate below",
+	"bitrate_kbps_gte":          "bitrate at least",
+	"height_lt":                 "below height",
+	"audio_codec_in":            "audio codec in",
+	"audio_tracks_gt":           "more audio tracks than",
+	"default":                   "default rule",
+	"verify_sample_seconds":     "verification sample",
 	"probe_outliers_above_kbps": "outlier probe above",
-	"ingest_buffer":           "ingest buffer",
-	"extensions":              "extensions",
-	"exclude":                 "excluded paths",
-	"name":                    "name",
-	"radarr":                  "Radarr URL",
-	"sonarr":                  "Sonarr URL",
-	"size_ratio_min":          "smallest allowed ratio",
-	"duration_tolerance_s":    "duration tolerance",
-	"libraries":               "libraries",
-	"paths":                   "paths",
+	"ingest_buffer":             "ingest buffer",
+	"extensions":                "extensions",
+	"exclude":                   "excluded paths",
+	"name":                      "name",
+	"radarr":                    "Radarr URL",
+	"sonarr":                    "Sonarr URL",
+	"size_ratio_min":            "smallest allowed ratio",
+	"duration_tolerance_s":      "duration tolerance",
+	"libraries":                 "libraries",
+	"paths":                     "paths",
 }
 
 // label turns a path into something readable, keeping the index it points at.
-func label(path string, _ any) string {
+//
+// An added or removed list item is an object, and printing it as JSON says
+// nothing; the few that have an identity of their own — a schedule window, a
+// rule — are named by it instead.
+func label(path string, value any) string {
+	if obj, ok := value.(map[string]any); ok {
+		if s := describeObject(obj); s != "" {
+			return s
+		}
+	}
+	return labelPath(path)
+}
+
+// describeObject names the objects this config is made of, or returns "".
+func describeObject(obj map[string]any) string {
+	if _, ok := obj["days"]; ok {
+		if start, ok1 := obj["start"].(string); ok1 {
+			if end, ok2 := obj["end"].(string); ok2 {
+				return describeDaysValue(obj["days"]) + ", " + start + "–" + end
+			}
+		}
+	}
+	if code, ok := obj["code"].(string); ok && code != "" {
+		return "rule " + code
+	}
+	if name, ok := obj["name"].(string); ok && name != "" {
+		return "library " + name
+	}
+	return ""
+}
+
+func describeDaysValue(v any) string {
+	raw, ok := v.([]any)
+	if !ok {
+		return "a window"
+	}
+	names := make([]string, 0, len(raw))
+	for _, d := range raw {
+		if s, ok := d.(string); ok {
+			names = append(names, s)
+		}
+	}
+	if len(names) == 7 {
+		return "every day"
+	}
+	return strings.Join(names, ", ")
+}
+
+func labelPath(path string) string {
 	if path == "" {
 		return "the document"
 	}
@@ -328,7 +376,7 @@ func label(path string, _ any) string {
 		}
 	}
 	if len(idx) > 0 {
-		return fmt.Sprintf("%s · #%s", title(group(path)), strings.Join(idx, "."))
+		return fmt.Sprintf("%s #%s · %s", title(group(path)), strings.Join(idx, "."), name)
 	}
 	return fmt.Sprintf("%s · %s", title(group(path)), name)
 }

@@ -150,7 +150,9 @@ func (s *Server) configState(ctx context.Context) configState {
 	head, err := s.st.HeadConfigRevision(ctx)
 	if err == nil {
 		out.HeadRev = head.Rev
-		out.HeadSHA = head.SHA
+		// Compare meanings, not storage forms: a revision recorded before this
+		// build changed its renderer must not look like a hand edit.
+		out.HeadSHA = canonicalSHA([]byte(head.Content))
 	}
 	diskSHA, diskErr := s.diskState()
 	out.DiskSHA = diskSHA
@@ -238,12 +240,41 @@ func (s *Server) apiConfigDiff(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusBadRequest, "E_BAD_REV", err.Error())
 		return
 	}
-	d, err := configdiff.Compute(before, after)
+	d, err := configdiff.Compute(canonicalForDiff(before), canonicalForDiff(after))
 	if err != nil {
 		s.fail(w, http.StatusUnprocessableEntity, "E_INVALID_CONFIG", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, d)
+}
+
+// canonicalSHA is the identity of a document as this build understands it.
+func canonicalSHA(doc []byte) string {
+	return config.Hash(canonicalForDiff(doc))
+}
+
+// canonicalForDiff puts a document into the form this build would store before
+// it is compared.
+//
+// Without this, the first save after the schedule model changed would report
+// every existing config as "weekday and weekend removed, windows added" — true
+// of the bytes and false of the schedule. A diff is about what the
+// configuration means, and the meaning of a legacy document is its migrated
+// form. A document that does not decode is compared as written, which is the
+// only thing left to do with it.
+func canonicalForDiff(doc []byte) []byte {
+	if len(doc) == 0 {
+		return doc
+	}
+	c, err := config.Decode(doc)
+	if err != nil {
+		return doc
+	}
+	out, err := config.Render(c)
+	if err != nil {
+		return doc
+	}
+	return out
 }
 
 // revisionContent is a revision's bytes; 0 means "whatever is on disk now".
@@ -283,7 +314,7 @@ func (s *Server) apiConfigDryRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	head, _ := s.st.HeadConfigRevision(ctx)
-	before := []byte(head.Content)
+	before := canonicalForDiff([]byte(head.Content))
 
 	parsed, perr := config.Decode(req.Config)
 	var rendered []byte
@@ -311,10 +342,19 @@ func (s *Server) apiConfigDryRun(w http.ResponseWriter, r *http.Request) {
 	// with one bad number), so it is attempted either way.
 	target := rendered
 	if target == nil {
-		target = req.Config
+		target = canonicalForDiff(req.Config)
 	}
 	if d, derr := configdiff.Compute(before, target); derr == nil {
 		out["diff"] = d
+	}
+	// The projection travels with the review: the cron lines are what the
+	// schedule means to everything outside this app, and they belong next to
+	// the diff that is about to change them.
+	if parsed != nil {
+		out["schedule"] = map[string]any{
+			"cron":   parsed.Schedule.CronProjects(),
+			"drains": parsed.Schedule.DrainBeforeMinutes,
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -349,7 +389,7 @@ func (s *Server) apiConfigSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if head.Rev != req.BaseRev {
-		d, _ := configdiff.Compute([]byte(head.Content), []byte(req.Config))
+		d, _ := configdiff.Compute(canonicalForDiff([]byte(head.Content)), canonicalForDiff(req.Config))
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error": map[string]string{
 				"code":    "E_CONFLICT",
@@ -412,7 +452,7 @@ func (s *Server) commitConfig(ctx context.Context, doc []byte, message, actor st
 
 	// Already head: no write, no revision. This is the guard that keeps an
 	// unchanged draft from filling the history with rows that say nothing.
-	if head, herr := s.st.HeadConfigRevision(ctx); herr == nil && head.SHA == sha {
+	if head, herr := s.st.HeadConfigRevision(ctx); herr == nil && canonicalSHA([]byte(head.Content)) == sha {
 		return head, parsed, nil, true, nil
 	}
 

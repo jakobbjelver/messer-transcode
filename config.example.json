@@ -9,8 +9,10 @@
     }
   ],
   "schedule": {
-    "weekday": "00:30-05:30",
-    "weekend": "02:00-07:00",
+    "windows": [
+      { "days": ["mon", "tue", "wed", "thu", "fri"], "start": "00:30", "end": "05:30" },
+      { "days": ["sat", "sun"], "start": "02:00", "end": "07:00" }
+    ],
     "drain_before_minutes": 15,
     "timezone": "Europe/Copenhagen"
   },

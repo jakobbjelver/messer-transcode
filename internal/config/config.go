@@ -49,11 +49,17 @@ type Library struct {
 }
 
 // Schedule defines when the node may run jobs, in the configured timezone.
+//
+// Windows are the source of truth. Weekday/Weekend are the pre-windows format:
+// they are still accepted (an old file, or a hand-written one) and migrated into
+// two windows on load, then dropped — one representation reaches the rest of
+// the program.
 type Schedule struct {
-	Weekday            string `json:"weekday"`
-	Weekend            string `json:"weekend"`
-	DrainBeforeMinutes int    `json:"drain_before_minutes"`
-	Timezone           string `json:"timezone"`
+	Windows            []ScheduleWindow `json:"windows,omitempty"`
+	Weekday            string           `json:"weekday,omitempty"`
+	Weekend            string           `json:"weekend,omitempty"`
+	DrainBeforeMinutes int              `json:"drain_before_minutes"`
+	Timezone           string           `json:"timezone"`
 }
 
 // Workers bounds concurrency. Encode above 1 buys no throughput on Apple
@@ -257,6 +263,7 @@ func Decode(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("decode: trailing data after the top-level object")
 	}
 
+	c.Schedule.migrate()
 	c.applyDefaults()
 	if err := c.Check(); err != nil {
 		return nil, err
