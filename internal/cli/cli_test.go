@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jakobbjelver/messer-transcode/internal/config"
 )
 
 func writeFile(path string, data []byte) error { return os.WriteFile(path, data, 0o644) }
@@ -106,5 +108,31 @@ func TestSchemaIsJSON(t *testing.T) {
 	}
 	if !strings.HasPrefix(strings.TrimSpace(out), "{") {
 		t.Errorf("schema output does not look like JSON")
+	}
+}
+
+// The node swaps its config without a restart. What matters is that an
+// identical reload is a no-op (no event storm) and a real one lands.
+func TestLiveConfigSwap(t *testing.T) {
+	first := &config.Config{Version: 1, Paths: config.Paths{Scratch: "/a", Quarantine: "/b"}}
+	live := &liveConfig{cur: first}
+	if got := live.get(); got != first {
+		t.Fatal("get did not return the config it was built with")
+	}
+
+	same := &config.Config{Version: 1, Paths: config.Paths{Scratch: "/a", Quarantine: "/b"}}
+	if live.set(same) {
+		t.Fatal("an identical config reported a change")
+	}
+	if live.get() != first {
+		t.Fatal("an identical config replaced the pointer")
+	}
+
+	changed := &config.Config{Version: 1, Paths: config.Paths{Scratch: "/c", Quarantine: "/b"}}
+	if !live.set(changed) {
+		t.Fatal("a real change reported no change")
+	}
+	if live.get().Paths.Scratch != "/c" {
+		t.Fatalf("scratch = %q, want /c", live.get().Paths.Scratch)
 	}
 }

@@ -610,7 +610,7 @@ func (s *Server) configWarnings(next *config.Config) []string {
 		out = append(out, "server.token is read from the token file, not the config")
 	}
 	if len(out) == 0 {
-		out = append(out, "live: the server applies it now, the node applies it on its next claim")
+		out = append(out, "live: the server applies it now, the node within seconds — a job already running finishes on the old config")
 	}
 	return out
 }

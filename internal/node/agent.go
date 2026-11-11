@@ -302,6 +302,7 @@ type pending struct {
 // prefetcher may be copying the next file's source while this one encodes, and
 // the egress worker may be placing the previous result at the same time.
 type Agent struct {
+	cfgMu   sync.RWMutex
 	cfg     *config.Config
 	client  *Client
 	journal *journal
@@ -399,6 +400,22 @@ func (s *runStats) summary() (jobs int, wall, encoded time.Duration, idlePct flo
 		idlePct = 100 * (1 - float64(s.encoded)/float64(wall))
 	}
 	return s.jobs, wall, s.encoded, idlePct, s.egressing
+}
+
+// SetConfig swaps the configuration the agent reads between jobs (the
+// quarantine sweep and the disk paths). The caller owns validation: an agent
+// only ever sees a config that loaded.
+func (a *Agent) SetConfig(c *config.Config) {
+	a.cfgMu.Lock()
+	defer a.cfgMu.Unlock()
+	a.cfg = c
+}
+
+// cfg is the configuration this agent is working from.
+func (a *Agent) config() *config.Config {
+	a.cfgMu.RLock()
+	defer a.cfgMu.RUnlock()
+	return a.cfg
 }
 
 // New builds an agent. journalPath may be empty to disable crash recovery.
@@ -803,14 +820,15 @@ func (a *Agent) reportTiming(ctx context.Context, job store.Work, encode, egress
 // It runs here, not in the orchestrator, because the container never mounts the
 // media volume.
 func (a *Agent) sweepQuarantine(ctx context.Context) {
-	if a.sweepMarker == "" || a.cfg.Paths.Quarantine == "" {
+	if a.sweepMarker == "" || a.config().Paths.Quarantine == "" {
 		return
 	}
 	if st, err := os.Stat(a.sweepMarker); err == nil && time.Since(st.ModTime()) < 24*time.Hour {
 		return
 	}
 
-	res, err := quarantine.Sweep(ctx, a.cfg.Paths.Quarantine, a.cfg.Safety.KeepQuarantineDays, time.Now(), false)
+	c := a.config()
+	res, err := quarantine.Sweep(ctx, c.Paths.Quarantine, c.Safety.KeepQuarantineDays, time.Now(), false)
 	if err != nil {
 		a.log(transcode.Event{Stage: "error", Code: "E_SWEEP", Message: err.Error()})
 		return
