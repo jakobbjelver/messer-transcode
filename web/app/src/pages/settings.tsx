@@ -60,7 +60,12 @@ export function SettingsPage() {
             <dl className="grid grid-cols-1 gap-x-8 gap-y-2 md:grid-cols-2">
               <Row label="Version">{config.data.version.version}</Row>
               <Row label="Commit">
-                <span className="m-data">{config.data.version.commit}</span>
+                {/* A full 40-char hash is wider than the 390 column and took
+                    the document to 496px; the short hash is the readable one,
+                    the full value stays in the tooltip. */}
+                <span className="m-data" title={config.data.version.commit}>
+                  {config.data.version.commit.slice(0, 7)}
+                </span>
               </Row>
               <Row label="Built">{config.data.version.build_date}</Row>
               <Row label="Uptime">{duration(config.data.uptime_seconds)}</Row>
