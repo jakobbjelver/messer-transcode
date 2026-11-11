@@ -43,6 +43,15 @@ async function get<T>(path: string, okStatuses: number[] = []): Promise<T> {
 
 type FileQuery = { state?: string; decision?: string; limit?: number; offset?: number };
 
+export type { FileQuery };
+
+/** Normalise whatever `useQuery` threw into the server's error envelope. */
+export function asApiError(err: unknown): ApiError {
+  if (err instanceof ApiError) return err;
+  if (err instanceof Error) return new ApiError("E_NETWORK", err.message, 0);
+  return new ApiError("E_NETWORK", String(err), 0);
+}
+
 function fileQuery(q: FileQuery): string {
   const p = new URLSearchParams();
   if (q.state) p.set("state", q.state);

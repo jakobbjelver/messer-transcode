@@ -29,6 +29,8 @@ export type Live = {
 };
 
 export type StatusResponse = {
+  /** Newest event id: the cache revision the stream also carries. */
+  rev: number;
   version: VersionInfo;
   uptime_seconds: number;
   window: WindowState;
@@ -157,6 +159,8 @@ export type ConfigResponse = {
 
 export type StreamPulse = {
   at: number;
+  /** Newest event id. When it rises, everything built from file rows is stale. */
+  rev: number;
   window: WindowState;
   dashboard: Dashboard | null;
   live: Live | null;
