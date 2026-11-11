@@ -3,7 +3,7 @@
 # cross-checked by messer-projects/scripts/audit.py; keep them true.
 
 schema: 1
-standard: "1.0"
+standard: "1.1"
 name: messer-transcode
 display: Messer Transcode
 family: messer
