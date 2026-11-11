@@ -58,7 +58,9 @@ export function SettingsPage() {
         ) : (
           <SettingsSection title="Build" description="The binary that is answering, and how long it has been up.">
             <dl className="grid grid-cols-1 gap-x-8 gap-y-2 md:grid-cols-2">
-              <Row label="Version">{config.data.version.version}</Row>
+              <Row label="Version">
+                <span className="break-all">{config.data.version.version}</span>
+              </Row>
               <Row label="Commit">
                 {/* A full 40-char hash is wider than the 390 column and took
                     the document to 496px; the short hash is the readable one,

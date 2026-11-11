@@ -37,6 +37,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A 40-char sha is a bad build stamp: it is the string the UI renders, and
+      # in a 390px column it widened the whole settings page. A tag still wins;
+      # otherwise the short sha is what a human reads.
+      - name: Short sha
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -47,7 +54,7 @@ jobs:
           provenance: false
           sbom: false
           build-args: |
-            VERSION=${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+            VERSION=${{ github.ref_type == 'tag' && github.ref_name || steps.sha.outputs.short }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp || '' }}
           tags: |
