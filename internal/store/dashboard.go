@@ -136,24 +136,105 @@ type SummaryRow struct {
 	Bitrate    int    `json:"bitrate_kbps"`
 	Target     int    `json:"target_kbps"`
 	SizeBytes  int64  `json:"size_bytes"`
+	// Priority is the operator's ordering (-100 last, 0 normal, 100 next).
+	Priority int `json:"priority"`
+	// The finished columns are what the Done view shows: a file that was
+	// replaced is still a queue row, and "done" without the sizes and the VMAF
+	// says nothing.
+	FinishedAt  int64   `json:"finished_at,omitempty"`
+	BytesBefore int64   `json:"bytes_before,omitempty"`
+	BytesAfter  int64   `json:"bytes_after,omitempty"`
+	VMAF        float64 `json:"vmaf,omitempty"`
+	Attempts    int     `json:"attempts"`
 }
 
-// Queue lists files for the queue page, filtered by state when given.
-func (s *Store) Queue(ctx context.Context, state, decision string, limit, offset int) ([]SummaryRow, error) {
+// QueueFilter is what the queue page asks for. The zero value means everything,
+// in claim order.
+type QueueFilter struct {
+	State    string   // one exact state
+	States   []string // any of these (the "in flight" tab)
+	Decision string   // one exact decision
+	Query    string   // substring of the path
+	Sort     string   // "queue" (default) | "recent" | "size"
+	Limit    int
+	Offset   int
+}
+
+// Sort names, so the server does not have to trust an arbitrary string.
+const (
+	SortQueue  = "queue"
+	SortRecent = "recent"
+	SortSize   = "size"
+)
+
+// QueuePage is one page plus the total under the same filter, which is what a
+// pager and a "1–100 of 3136" caption both need.
+type QueuePage struct {
+	Rows  []SummaryRow
+	Total int
+}
+
+// Queue lists files for the queue page.
+//
+// The ordering is the part with the most meaning: in-flight first (so a running
+// job is never buried), then the queue itself ordered by the operator's
+// priority and then by size, then parked files. "Everything" therefore reads
+// top-down as "happening, queued, broken, retired" instead of as a size ranking.
+func (s *Store) Queue(ctx context.Context, f QueueFilter) (QueuePage, error) {
+	where := []string{"1=1"}
+	args := []any{}
+	if f.State != "" {
+		where = append(where, "state = ?")
+		args = append(args, f.State)
+	}
+	if len(f.States) > 0 {
+		ph := make([]string, len(f.States))
+		for i, st := range f.States {
+			ph[i] = "?"
+			args = append(args, st)
+		}
+		where = append(where, "state IN ("+strings.Join(ph, ",")+")")
+	}
+	if f.Decision != "" {
+		where = append(where, "COALESCE(decision,'') = ?")
+		args = append(args, f.Decision)
+	}
+	if f.Query != "" {
+		where = append(where, "path LIKE ?")
+		args = append(args, "%"+f.Query+"%")
+	}
+	predicate := strings.Join(where, " AND ")
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM files WHERE `+predicate, args...).Scan(&total); err != nil {
+		return QueuePage{}, err
+	}
+
+	order := `CASE state WHEN 'encoding' THEN 0 WHEN 'verifying' THEN 1 WHEN 'replacing' THEN 2
+             WHEN 'planned' THEN 3 WHEN 'failed' THEN 4 WHEN 'skipped' THEN 5 ELSE 6 END,
+       priority DESC, id`
+	switch f.Sort {
+	case SortRecent:
+		// NULLs last: an unfinished row has no finish time and belongs at the
+		// bottom of a list sorted by one.
+		order = `finished_at IS NULL, finished_at DESC, id DESC`
+	case SortSize:
+		order = `size_bytes DESC, id`
+	}
+
 	query := `
 SELECT id, path, library, COALESCE(decision,''), COALESCE(reason_code,''), COALESCE(reason,''),
        state, COALESCE(video_codec,''), COALESCE(width,0), COALESCE(height,0), COALESCE(bitrate_kbps,0),
-       COALESCE(target_kbps,0), size_bytes
+       COALESCE(target_kbps,0), size_bytes, priority,
+       COALESCE(finished_at,0), COALESCE(bytes_before,0), COALESCE(bytes_after,0), COALESCE(vmaf,0), attempts
 FROM files
-WHERE (? = '' OR state = ?) AND (? = '' OR decision = ?)
-ORDER BY
-  CASE state WHEN 'encoding' THEN 0 WHEN 'verifying' THEN 1 WHEN 'replacing' THEN 2
-             WHEN 'planned' THEN 3 WHEN 'failed' THEN 4 ELSE 5 END,
-  size_bytes DESC
+WHERE ` + predicate + `
+ORDER BY ` + order + `
 LIMIT ? OFFSET ?`
-	rows, err := s.db.QueryContext(ctx, query, state, state, decision, decision, limit, offset)
+
+	rows, err := s.db.QueryContext(ctx, query, append(args, f.Limit, f.Offset)...)
 	if err != nil {
-		return nil, err
+		return QueuePage{}, err
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -161,12 +242,47 @@ LIMIT ? OFFSET ?`
 	for rows.Next() {
 		var r SummaryRow
 		if err := rows.Scan(&r.ID, &r.Path, &r.Library, &r.Decision, &r.ReasonCode, &r.Reason,
-			&r.State, &r.Codec, &r.Width, &r.Height, &r.Bitrate, &r.Target, &r.SizeBytes); err != nil {
-			return nil, err
+			&r.State, &r.Codec, &r.Width, &r.Height, &r.Bitrate, &r.Target, &r.SizeBytes, &r.Priority,
+			&r.FinishedAt, &r.BytesBefore, &r.BytesAfter, &r.VMAF, &r.Attempts); err != nil {
+			return QueuePage{}, err
 		}
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	return QueuePage{Rows: out, Total: total}, rows.Err()
+}
+
+// QueueSummary is the tab strip's counts: one query, scoped to what each tab
+// actually means.
+//
+// The dashboard's decision counts cannot answer this — they include finished
+// work, so "to encode" reads 761 while only 74 are waiting. That number is how
+// a queue looks like it is only ever growing.
+type QueueSummary struct {
+	Queued     int `json:"queued"`
+	Encode     int `json:"encode"`
+	Remux      int `json:"remux"`
+	InFlight   int `json:"inflight"`
+	Failed     int `json:"failed"`
+	Done       int `json:"done"`
+	Skipped    int `json:"skipped"`
+	Everything int `json:"everything"`
+}
+
+// QueueCounts fills the tab strip.
+func (s *Store) QueueCounts(ctx context.Context) (QueueSummary, error) {
+	var q QueueSummary
+	err := s.db.QueryRowContext(ctx, `
+SELECT
+  COALESCE(SUM(CASE WHEN state='planned' THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN state='planned' AND decision='encode' THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN state='planned' AND decision='remux' THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN state IN ('encoding','verifying','replacing') THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN state='failed' THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN state='done' THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN state='skipped' THEN 1 ELSE 0 END),0),
+  COUNT(*)
+FROM files`).Scan(&q.Queued, &q.Encode, &q.Remux, &q.InFlight, &q.Failed, &q.Done, &q.Skipped, &q.Everything)
+	return q, err
 }
 
 // FileDetail is the per-file page.

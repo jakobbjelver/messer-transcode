@@ -15,6 +15,7 @@ import type { FileQuery } from "./api";
 export const qk = {
   status: ["status"] as const,
   control: ["control"] as const,
+  queue: ["queue"] as const,
   files: (q: FileQuery) => ["files", q] as const,
   file: (id: number) => ["file", id] as const,
   runs: (last: number) => ["runs", last] as const,

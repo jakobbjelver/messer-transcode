@@ -73,11 +73,11 @@ func TestQueuedWorkWithSilentNodeIsBroken(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := st.Queue(ctx, "", "", 10, 0)
+	page, err := st.Queue(ctx, store.QueueFilter{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetDecision(ctx, rows[0].ID, store.Decision{
+	if err := st.SetDecision(ctx, page.Rows[0].ID, store.Decision{
 		Decision: "encode", Code: "R_H264_ENCODE", KeyKbps: 6000, State: "planned",
 	}); err != nil {
 		t.Fatal(err)
@@ -210,8 +210,8 @@ func TestReportCarriesQueueDepth(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	rows, _ := st.Queue(ctx, "", "", 10, 0)
-	_ = st.SetDecision(ctx, rows[0].ID, store.Decision{
+	page, _ := st.Queue(ctx, store.QueueFilter{Limit: 10})
+	_ = st.SetDecision(ctx, page.Rows[0].ID, store.Decision{
 		Decision: "encode", Code: "R_H264_ENCODE", KeyKbps: 6000, State: "planned",
 	})
 

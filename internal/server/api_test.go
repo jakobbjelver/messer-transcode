@@ -17,11 +17,11 @@ import (
 // fileIDByPath finds a seeded row's id without assuming insertion order.
 func fileIDByPath(t *testing.T, s *Server, contains string) int64 {
 	t.Helper()
-	rows, err := s.st.Queue(context.Background(), "", "", 100, 0)
+	page, err := s.st.Queue(context.Background(), store.QueueFilter{Limit: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range rows {
+	for _, r := range page.Rows {
 		if strings.Contains(r.Path, contains) {
 			return r.ID
 		}

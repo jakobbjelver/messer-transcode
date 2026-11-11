@@ -86,6 +86,14 @@ export type FileRow = {
   bitrate_kbps: number;
   target_kbps: number;
   size_bytes: number;
+  /** -100 last · 0 normal · +100 next: the operator's ordering. */
+  priority: number;
+  /** Set only on a finished row; the Done view orders and shows by it. */
+  finished_at?: number;
+  bytes_before?: number;
+  bytes_after?: number;
+  vmaf?: number;
+  attempts: number;
 };
 
 export type FileDetail = FileRow & {
@@ -119,6 +127,8 @@ export type FilesResponse = {
   limit: number;
   offset: number;
   count: number;
+  /** Rows matching the filter, not just this page — what a pager needs. */
+  total: number;
 };
 
 export type EventRow = {
@@ -164,4 +174,41 @@ export type StreamPulse = {
   window: WindowState;
   dashboard: Dashboard | null;
   live: Live | null;
+};
+
+/** The operator's hand on the queue: a pause, and a window forced open or shut. */
+export type Control = {
+  paused: boolean;
+  paused_at?: number;
+  paused_by?: string;
+  override: "" | "open" | "close";
+  override_until?: number;
+  override_by?: string;
+};
+
+export type ControlResponse = {
+  control: Control;
+  window: WindowState;
+  /** What a claim would be answered with right now, and why. */
+  claiming: { allowed: boolean; reason: string };
+  now: number;
+};
+
+/** What a queue action did: rows it applied to, rows it refused and why. */
+export type ActResult = {
+  applied: number;
+  /** Always an array on the wire; the `?` keeps an older server from crashing the page. */
+  refused?: { id: number; state?: string; reason: "state" | "missing" }[] | null;
+};
+
+/** The queue tab strip's counts. Scoped to states, unlike the dashboard's. */
+export type QueueSummary = {
+  queued: number;
+  encode: number;
+  remux: number;
+  inflight: number;
+  failed: number;
+  done: number;
+  skipped: number;
+  everything: number;
 };

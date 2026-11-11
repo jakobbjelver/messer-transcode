@@ -49,9 +49,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/live", s.apiLive)
 	mux.HandleFunc("GET /api/v1/files", s.apiFiles)
 	mux.HandleFunc("GET /api/v1/files/{id}", s.apiFile)
+	mux.HandleFunc("GET /api/v1/queue", s.apiQueue)
 	mux.HandleFunc("GET /api/v1/events", s.apiEvents)
 	mux.HandleFunc("GET /api/v1/config", s.apiConfig)
 	mux.HandleFunc("GET /api/v1/stream", s.apiStream)
+
+	// Steering. Every one of these writes; the read side is /api/v1/control.
+	mux.HandleFunc("GET /api/v1/control", s.apiControl)
+	mux.HandleFunc("POST /api/v1/control/pause", s.apiPause)
+	mux.HandleFunc("POST /api/v1/control/window", s.apiWindow)
+	mux.HandleFunc("POST /api/v1/files/{id}/retry", s.apiFileRetry)
+	mux.HandleFunc("POST /api/v1/files/{id}/skip", s.apiFileSkip)
+	mux.HandleFunc("POST /api/v1/files/{id}/priority", s.apiFilePriority)
+	mux.HandleFunc("POST /api/v1/queue/act", s.apiQueueAct)
 
 	mux.HandleFunc("POST /api/v1/node/register", s.nodeGuard(s.nodeRegister))
 	mux.HandleFunc("POST /api/v1/node/claim", s.nodeGuard(s.nodeClaim))
