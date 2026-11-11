@@ -944,8 +944,30 @@ the quality target is the only dial.
   published port and the node's configured target, and it answered the live node's registration for
   ~8 hours (`E_NODE_SILENT`, one window lost, 747 files untouched and queued). Dev servers now use
   8299 (Go) and 5299 (Vite). Recorded in `AGENTS.md` and `MESSER.md`.
-  **Not done:** the image has not been built or deployed; the live container still runs `aba7a7f` with
-  the old UI. `docs/PLAN.md` §9 rewritten above; adoption record in `MESSER.md`.
+  **Deployed 2026-11-11 (rev 11):** the image is live — `video-stack` service `transcode` runs
+  `5596682`, health `ok`, node registered, 3136 files intact. The app answers on
+  **`transcode.messer.wtf`** and **`transcode.local`** (the `-server` suffix is gone; the retired
+  hostname falls through to the front door). `docs/PLAN.md` §9 rewritten above; adoption record in
+  `MESSER.md`.
+
+- **rev 11** (2026-11-11): **the app is deployed at transcode.messer.wtf, and the dev server is a
+  Portal Action rather than a shell.**
+  - `services.yaml`: `transcode` loses the `-server` suffix; new `transcode-dev` entry
+    (`caddy_directives` → `host.docker.internal:5299`, `cloudflare_via_caddy`, `startup: false`).
+    The zone's "unknown host to the front door" redirect rule also holds a hardcoded hostname
+    allowlist — `setup.py` cannot see it, so `transcode.messer.wtf` and `transcode-dev.messer.wtf`
+    were added by API. Without that the URL answered 302 to the apex while Caddy answered 200.
+  - Dev server: `~/Scripts/run-transcode-dev.sh` (Go `:8299` + Vite `:5299`) is one PM2 app whose
+    trap kills both children, supervised by `dev-idle-watch.py`; the pair is started from the repo's
+    **gitignored** `actions/actions.json` as the Portal's "Transcode Dev Server", served at
+    `transcode-dev.messer.wtf` / `transcode-dev.local`. `.dev/` holds `sqlite3 .backup` snapshots of
+    the live config and queue, so a dev session can never write production state.
+    `dev-stray-guard.py` gained a `messer-transcode` entry that matches the Go process on `:8299`
+    only — `messer-transcode node` is the production encoder and must never be a candidate.
+  - Two defects the deployment exposed, both invisible locally: Vite answered **403 "Blocked
+    request"** for its own hostname until `allowedHosts` named it, and `image.yml` stamped VERSION
+    with the full 40-char sha, which widened the settings page to 487px at 390. VERSION is now the
+    7-char stamp and the row wraps.
 
 ### How to resume after a context reset
 

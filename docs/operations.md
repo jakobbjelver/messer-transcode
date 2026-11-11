@@ -82,7 +82,7 @@ openssl rand -hex 32 > ~/Server/configs/video/transcode/server.token
 chmod 600 ~/Server/configs/video/transcode/server.token
 ```
 
-**The address.** `https://transcode-server.messer.wtf`, behind Cloudflare Access
+**The address.** `https://transcode.messer.wtf`, behind Cloudflare Access
 like the rest of the stack. The Caddyfile and the tunnel are generated from
 `services.yaml`, so the subdomain is declared there and nowhere else:
 
