@@ -34,23 +34,6 @@ func (s *Server) windowState() (open bool, spec, nextAt string) {
 	return open, spec, nextAt
 }
 
-// idleNote is the sentence shown when nothing is encoding.
-func (s *Server) idleNote() string {
-	open, _, next := s.windowState()
-	if open {
-		return "The window is open — start the node and it will claim work."
-	}
-	return "Next window opens at " + next + ". Nothing is queued to a machine that is not running."
-}
-
-func (s *Server) windowNote() string {
-	open, spec, next := s.windowState()
-	if open {
-		return "open · " + spec
-	}
-	return "shut · opens " + next
-}
-
 // clockMinute is a wall-clock time of day, with no date attached.
 type clockMinute struct {
 	h, m int

@@ -16,14 +16,19 @@ re-derive its numbers or re-argue its decisions.
 |---|---|
 | `cmd/messer-transcode/` | entry point (role selected by flag/config) |
 | `internal/` | orchestrator, rules, queue, node/worker, version |
+| `web/` | the embedded React app: `web.go` serves `app/dist`, which `make web` builds |
 | `deploy/` | container + host deploy assets |
 | `config.example.json` | rule list and settings shape |
 | `bin/` | build output (never committed) |
+| `MESSER.md` | the UI's adoption record: brand, canon version, atom patches, deviations |
 
 ## Commands
 
 ```bash
-make build      # bin/messer-transcode with version/commit/date ldflags
+make build      # bin/messer-transcode with version/commit/date ldflags (builds the frontend first)
+make web        # vite build → web/app/dist (embedded, so this is a prerequisite of any go build)
+make web-test   # vitest: formatters, state map, schedule copy
+make web-dev    # vite on 5299, proxying /api to the Go server on 8299
 make test       # go test ./...
 make race       # race detector
 make vet lint check
@@ -53,6 +58,13 @@ make docker     # container image
   the plan; do not "improve" a measured value by intuition.
 - **Deploy is build → image → Komodo**: push builds `ghcr.io/jakobbjelver/messer-transcode`, then
   `komodo_deploy_stack(stack="video-stack", services=["transcode"])`. The macOS worker is a PM2 job.
+- **The UI never takes the orchestrator down.** The React app is embedded (`//go:embed all:app/dist`);
+  with no `dist` the HTML routes answer `503 frontend not built: run make web` and the node API keeps
+  serving. A missing frontend is a degraded UI, not a stopped pipeline.
+- **Never bind a local dev server to 8099.** That is the container's published port *and* the node's
+  configured `server.url` (`http://127.0.0.1:8099`), so a host process there answers the live node's
+  registration and silently takes the encoder out of service — it did exactly that for one window.
+  Vite proxies `/api` to `VITE_API_ORIGIN`, default `http://127.0.0.1:8299`.
 
 ## Working rules
 

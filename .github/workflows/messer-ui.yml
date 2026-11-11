@@ -1,0 +1,37 @@
+name: messer-ui conformance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: jakobbjelver/messer-ui
+          path: .messer-ui
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/app/package-lock.json
+      # The static pass reads source only; the frontend build is needed because
+      # `go vet`/tests elsewhere embed it, not for this job.
+      - name: install app dependencies
+        run: cd web/app && npm ci
+      # Source pass: colours, radii, icon set, type scale and fonts. No browser.
+      - name: messer check (static)
+        run: node .messer-ui/scripts/check.mjs --app . --static
+      # `check` cannot see a stale block copy; this compares every installed block
+      # against registry/<item> (a deliberate divergence is declared in apps.json).
+      - name: installed blocks match the registry
+        run: node .messer-ui/scripts/blocks.mjs --app .
+      # The icons in this repo are a copy of the canon's mark; `npm run marks`
+      # regenerates them.
+      - name: installed icons match the canon marks
+        run: node .messer-ui/scripts/brand-check.mjs --app .

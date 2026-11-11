@@ -2,7 +2,19 @@
 # The server image is the orchestrator and UI only: it never mounts the media
 # library and never runs ffmpeg. Encoding happens on the host, where
 # VideoToolbox lives.
-FROM golang:1.26-alpine AS build
+#
+# The React app is embedded into the Go binary, so it is built first and its dist
+# is injected: `go build` fails without it (`pattern all:app/dist: no matching
+# files`), which is why this stage exists rather than a separate asset volume.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS app
+
+WORKDIR /src/web/app
+COPY web/app/package.json web/app/package-lock.json ./
+RUN npm ci
+COPY web/app/ ./
+RUN npm run build
+
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 WORKDIR /src
 
@@ -10,6 +22,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=app /src/web/app/dist ./web/app/dist
 
 ARG VERSION=dev
 ARG COMMIT=none

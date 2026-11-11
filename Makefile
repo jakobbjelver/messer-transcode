@@ -10,26 +10,37 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.Commit=$(COMMIT) \
 	-X $(PKG)/internal/version.BuildDate=$(DATE)
 
-.PHONY: all build test race fmt vet lint check docker tidy clean
+.PHONY: all web web-dev web-test build test race fmt vet lint check docker tidy clean
 
 all: build
 
-build:
+# The binary embeds web/app/dist (`//go:embed all:app/dist`), so the frontend is
+# built first. Without it `go build` fails: pattern all:app/dist: no matching files.
+web:
+	cd web/app && { [ -d node_modules ] || npm ci; } && npm run build
+
+web-dev:
+	cd web/app && npm run dev
+
+web-test:
+	cd web/app && npm test
+
+build: web
 	go build -trimpath -ldflags '$(LDFLAGS)' -o bin/$(BINARY) ./cmd/messer-transcode
 
-test:
+test: web
 	go test ./...
 
-race:
+race: web
 	go test -race ./...
 
 fmt:
 	gofmt -w .
 
-vet:
+vet: web
 	go vet ./...
 
-lint:
+lint: web
 	golangci-lint run
 
 # fmt-check is what CI runs: it fails instead of rewriting.
@@ -54,4 +65,4 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -rf bin
+	rm -rf bin web/app/dist web/app/node_modules

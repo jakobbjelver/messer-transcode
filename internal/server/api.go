@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/jakobbjelver/messer-transcode/internal/health"
 	"github.com/jakobbjelver/messer-transcode/internal/media"
+	"github.com/jakobbjelver/messer-transcode/internal/planner"
 	"github.com/jakobbjelver/messer-transcode/internal/report"
 	"github.com/jakobbjelver/messer-transcode/internal/store"
 	"github.com/jakobbjelver/messer-transcode/internal/version"
@@ -139,7 +141,19 @@ func (s *Server) apiFile(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusNotFound, "E_NOT_FOUND", "no such file")
 		return
 	}
-	writeJSON(w, http.StatusOK, f)
+	// The tier's expectation travels with the file: a VMAF number means nothing
+	// without the class it was measured against, and only the server knows both.
+	// The readable track lists and the reclaim figure come from the store's own
+	// helpers so the UI never re-implements arithmetic or copy.
+	nominal := planner.NominalHeight(f.Width, f.Height)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"file":           f,
+		"expected_vmaf":  planner.ExpectedVMAF(s.cfg, f.Codec, nominal),
+		"nominal_height": nominal,
+		"reclaim_bytes":  f.Reclaim(),
+		"audio_list":     f.AudioList(),
+		"sub_list":       f.SubList(),
+	})
 }
 
 func (s *Server) apiEvents(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +170,104 @@ func (s *Server) apiEvents(w http.ResponseWriter, r *http.Request) {
 		events = []store.EventRow{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+}
+
+// ── config ────────────────────────────────────────────────────────────────
+
+// apiConfig is what the settings screen reads: the build, the paths, and the
+// configuration with the node token stripped. The token is the one secret this
+// process holds; a read-only UI has no reason to see it.
+func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
+	var size int64
+	if v, err := osStat(s.dbPath); err == nil {
+		size = v
+	}
+	redacted := *s.cfg
+	redacted.Server.Token = ""
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version": map[string]string{
+			"version":    version.Version,
+			"commit":     version.Commit,
+			"build_date": version.BuildDate,
+		},
+		"uptime_seconds": int(time.Since(s.started).Seconds()),
+		"config_path":    s.cfgPath,
+		"db_path":        s.dbPath,
+		"db_size_bytes":  size,
+		"config":         redacted,
+	})
+}
+
+// ── live stream ───────────────────────────────────────────────────────────
+
+// streamPulse is the dashboard's live channel payload. It is typed JSON rather
+// than the template-shaped string map the old pages patched into data-live
+// nodes: the client should not inherit one UI's plumbing.
+type streamPulse struct {
+	At        int64            `json:"at"`
+	Window    streamWindow     `json:"window"`
+	Dashboard *store.Dashboard `json:"dashboard"`
+	Live      *store.Live      `json:"live"`
+}
+
+type streamWindow struct {
+	Open   bool   `json:"open"`
+	Spec   string `json:"spec"`
+	NextAt string `json:"next_at,omitempty"`
+}
+
+// apiStream pushes one event per second and only when it changed. The node API
+// is the pipeline; this is for a reader looking at the pipeline.
+func (s *Server) apiStream(w http.ResponseWriter, r *http.Request) {
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		s.fail(w, http.StatusInternalServerError, "E_NO_STREAM", "streaming unsupported")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+
+	last := ""
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-tick.C:
+			b, err := json.Marshal(s.pulse(r.Context()))
+			if err != nil {
+				return
+			}
+			if string(b) == last {
+				continue
+			}
+			last = string(b)
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+				return
+			}
+			fl.Flush()
+		}
+	}
+}
+
+func (s *Server) pulse(ctx context.Context) streamPulse {
+	open, spec, next := s.windowState()
+	out := streamPulse{
+		At:     time.Now().Unix(),
+		Window: streamWindow{Open: open, Spec: spec, NextAt: next},
+	}
+	if snap, err := s.st.Snapshot(ctx); err == nil {
+		out.Dashboard = &snap
+	}
+	if live, ok, _ := s.st.Live(ctx); ok {
+		out.Live = &live
+	}
+	return out
 }
 
 // ── node API ──────────────────────────────────────────────────────────────

@@ -1,8 +1,11 @@
 .git
+.github
+.hermes
 bin
-.dev
 *.db
 *.db-wal
 *.db-shm
 config.json
-.DS_Store
+web/app/node_modules
+web/app/dist
+web/app/tsconfig.tsbuildinfo
