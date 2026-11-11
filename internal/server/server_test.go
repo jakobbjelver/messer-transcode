@@ -25,7 +25,9 @@ func testConfig() *config.Config {
 		Version:   1,
 		Libraries: []config.Library{{Name: "movies", Root: "/media", Extensions: []string{".mkv"}}},
 		Schedule: config.Schedule{
-			Weekday: "00:00-23:59", Weekend: "00:00-23:59",
+			Windows: []config.ScheduleWindow{
+				{Days: []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}, Start: "00:00", End: "23:59"},
+			},
 			DrainBeforeMinutes: 0, Timezone: "UTC",
 		},
 		Workers: config.Workers{Encode: 1, Probe: 2, IngestBuffer: 2},
@@ -315,14 +317,16 @@ func TestNodeHeartbeatAndResult(t *testing.T) {
 	}
 }
 
-func TestWithinWindow(t *testing.T) {
-	start, end, err := parseWindow("00:30-05:30")
-	if err != nil {
-		t.Fatal(err)
+// The window is the schedule's business, so this asserts the schedule model
+// through the server's reader rather than a second parser here.
+func TestWindowStateAndClaims(t *testing.T) {
+	s := newTestServer(t)
+	s.config().Schedule = config.Schedule{
+		Windows:            []config.ScheduleWindow{{Days: []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}, Start: "00:30", End: "05:30"}},
+		Timezone:           "UTC",
+		DrainBeforeMinutes: 0,
 	}
-	at := func(h, m int) time.Time {
-		return time.Date(2026, 11, 6, h, m, 0, 0, time.UTC)
-	}
+	at := func(h, m int) time.Time { return time.Date(2026, 11, 6, h, m, 0, 0, time.UTC) }
 	cases := []struct {
 		when time.Time
 		want bool
@@ -335,18 +339,25 @@ func TestWithinWindow(t *testing.T) {
 		{at(23, 59), false},
 	}
 	for _, c := range cases {
-		if got := withinWindow(c.when, start, end); got != c.want {
-			t.Errorf("withinWindow(%s) = %v, want %v", c.when.Format("15:04"), got, c.want)
+		occ, ok := s.config().Schedule.OccurrenceAt(c.when)
+		if ok != c.want {
+			t.Errorf("at %s: open=%v, want %v", c.when.Format("15:04"), ok, c.want)
+		}
+		if ok && (occ.Spec == "" || occ.Kind == "") {
+			t.Errorf("at %s: an occurrence needs a spec and a kind: %+v", c.when.Format("15:04"), occ)
 		}
 	}
 
 	// A window that crosses midnight is the case a naive comparison gets wrong.
-	start, end, _ = parseWindow("22:00-06:00")
-	if !withinWindow(at(23, 0), start, end) {
-		t.Error("23:00 should be inside 22:00-06:00")
-	}
-	if withinWindow(at(12, 0), start, end) {
-		t.Error("12:00 should be outside 22:00-06:00")
+	s.config().Schedule.Windows = []config.ScheduleWindow{{Days: []string{"fri"}, Start: "22:00", End: "06:00"}}
+	// Fri 2026-11-06 23:00 and Sat 02:00 are both inside; Sat noon is not.
+	for _, c := range []struct {
+		when time.Time
+		want bool
+	}{{time.Date(2026, 11, 6, 23, 0, 0, 0, time.UTC), true}, {time.Date(2026, 11, 7, 2, 0, 0, 0, time.UTC), true}, {time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC), false}} {
+		if _, ok := s.config().Schedule.OccurrenceAt(c.when); ok != c.want {
+			t.Errorf("wrap: %s open=%v, want %v", c.when, ok, c.want)
+		}
 	}
 }
 

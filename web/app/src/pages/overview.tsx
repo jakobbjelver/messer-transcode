@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api, asApiError } from "@/lib/api";
 import { bytes, clock, day, gb, pct, timeOfDay } from "@/lib/format";
 import { qk } from "@/lib/keys";
-import { idleNote, windowLabel } from "@/lib/schedule";
+import { idleNote, scheduleLabel, windowLabel } from "@/lib/schedule";
 import { statePresentation } from "@/lib/status";
 import type { Run } from "@/lib/types";
 
@@ -187,7 +187,7 @@ export function OverviewPage() {
         ) : (
           <EmptyState
             title="No run has closed yet"
-            description={runs.data ? runs.data.schedule.weekday : "Reading the schedule…"}
+            description={runs.data ? scheduleLabel(runs.data.schedule) : "Reading the schedule…"}
           />
         )}
       </Section>

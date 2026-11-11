@@ -208,7 +208,19 @@ func checkConfig(in In) Check {
 		}
 	}
 	return Check{Name: "config", Status: OK,
-		Detail: fmt.Sprintf("%d libraries, window %s", len(in.Config.Libraries), in.Config.Schedule.Weekday)}
+		Detail: fmt.Sprintf("%d libraries, %s", len(in.Config.Libraries), describeSchedule(in.Config.Schedule))}
+}
+
+// describeSchedule says when work may run, in the config's own words.
+func describeSchedule(s config.Schedule) string {
+	if len(s.Windows) == 0 {
+		return "no window"
+	}
+	var parts []string
+	for _, w := range s.Windows {
+		parts = append(parts, strings.Join(w.Days, ",")+" "+w.Start+"-"+w.End)
+	}
+	return strings.Join(parts, "; ")
 }
 
 func checkDatabase(ctx context.Context, in In) Check {
@@ -435,8 +447,7 @@ func checkWindow(ctx context.Context, in In, now time.Time) Check {
 	}
 
 	return Check{Name: "window", Status: OK,
-		Detail: fmt.Sprintf("weekday %s, weekend %s, drain %dm",
-			in.Config.Schedule.Weekday, in.Config.Schedule.Weekend, in.Config.Schedule.DrainBeforeMinutes)}
+		Detail: fmt.Sprintf("%s, drain %dm", describeSchedule(in.Config.Schedule), in.Config.Schedule.DrainBeforeMinutes)}
 }
 
 // checkNodeSeen is the check that would have caught the Tdarr collapse: work

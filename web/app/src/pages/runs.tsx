@@ -60,7 +60,7 @@ export function RunsPage() {
         ) : runs.data.runs.length === 0 ? (
           <EmptyState
             title="No run has closed yet"
-            description={`The window is ${runs.data.schedule.weekday} on weekdays and ${runs.data.schedule.weekend} at weekends.`}
+            description={scheduleLabel(runs.data.schedule)}
           />
         ) : (
           <Table>

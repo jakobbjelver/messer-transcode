@@ -15,6 +15,7 @@ import {
   useConfigDraft,
 } from "@/components/config-fields";
 import { DiffDialog } from "@/components/diff-dialog";
+import { ScheduleGrid } from "@/components/schedule-grid";
 import { Page } from "@/components/page";
 import { RefreshButton } from "@/components/refresh-button";
 import { Section } from "@/components/section";
@@ -54,8 +55,13 @@ export function ConfigPage() {
   const [review, setReview] = useState<DryRun | null>(null);
   const [conflict, setConflict] = useState<{ headRev: number } | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // What the open dialog is for. The file's dirtiness does not decide this:
+  // a dirty file can still be reviewed as a draft, and a clean one can be
+  // adopted. The action that opened the dialog decides.
+  const [mode, setMode] = useState<"save" | "adopt">("save");
   const [notice, setNotice] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [restoreFor, setRestoreFor] = useState<number | null>(null);
 
   const headRev = config.data?.state.head_rev ?? 0;
@@ -119,6 +125,7 @@ export function ConfigPage() {
   const startReview = () => {
     setSaveErr(null);
     setConflict(null);
+    setMode("save");
     dryRun.mutate(draft, {
       onSuccess: (d) => {
         setReview(d);
@@ -130,6 +137,7 @@ export function ConfigPage() {
 
   const confirmSave = async (message: string) => {
     setSaveErr(null);
+    setSaving(true);
     try {
       const res = await api.configSave(draft, review?.head_rev ?? headRev, message);
       setReviewOpen(false);
@@ -145,10 +153,13 @@ export function ConfigPage() {
       if (err.status === 409 && payload) {
         setConflict({ headRev: payload.head_rev ?? 0 });
         setReview((prev) => (prev ? { ...prev, diff: payload.diff ?? prev.diff } : prev));
+        setSaving(false);
         return;
       }
       setReviewOpen(false);
       setSaveErr(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -192,10 +203,11 @@ export function ConfigPage() {
         <DiskNotice
           state={state}
           headRev={state.head_rev}
-          busy={adopt.isPending}
+          busy={mode === "adopt" ? adopt.isPending : saving}
           onReview={async () => {
             const d = await api.configDiff(state.head_rev, 0);
             setConflict(null);
+            setMode("adopt");
             setReview({ ok: true, problems: [], head_rev: state.head_rev, head_sha: state.head_sha, sha: "", state, diff: d });
             setReviewOpen(true);
           }}
@@ -223,15 +235,24 @@ export function ConfigPage() {
         <TabsContent value="form" className="flex flex-col gap-6">
           <DraftProvider doc={draft} set={set}>
             <Section eyebrow="schedule" aside="when jobs may run">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <TextField path="/schedule/weekday" label="Weekday window" placeholder="00:30-05:30" />
-                <TextField path="/schedule/weekend" label="Weekend window" placeholder="02:00-07:00" />
-                <NumberField
-                  path="/schedule/drain_before_minutes"
-                  label="Stop claiming, minutes before the window closes"
-                  hint="a running job is never killed; this is when new work stops"
+              <div className="flex flex-col gap-4">
+                <ScheduleGrid
+                  windows={draft.schedule.windows}
+                  onChange={(windows) => set("/schedule/windows", windows)}
                 />
-                <TextField path="/schedule/timezone" label="Timezone" placeholder="Europe/Stockholm" />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <NumberField
+                    path="/schedule/drain_before_minutes"
+                    label="Stop claiming, minutes before a window closes"
+                    hint="a running job is never killed; this is when new work stops"
+                  />
+                  <TextField path="/schedule/timezone" label="Timezone" placeholder="Europe/Stockholm" />
+                </div>
+                <p className="m-meta max-w-[70ch] text-[var(--text-3)]">
+                  A window is stored as the days it starts on plus a clock range, so a block that runs past
+                  midnight belongs to the evening it began. Blocks that overlap in time are saved as the days
+                  that are on in each half hour — the grid is the canonical form.
+                </p>
               </div>
             </Section>
 
@@ -386,11 +407,12 @@ export function ConfigPage() {
         }}
         diff={review?.diff ?? null}
         problems={review?.problems ?? []}
-        busy={adopt.isPending}
+        cron={schedulesChanged(review) ? review?.schedule?.cron : undefined}
+        busy={mode === "adopt" ? adopt.isPending : saving}
         conflict={conflict}
-        title={state.dirty ? "What changed on the volume" : "Review this change"}
-        confirmLabel={state.dirty ? "Adopt into history" : "Save it"}
-        onConfirm={state.dirty ? adoptDisk : confirmSave}
+        title={mode === "adopt" ? "What changed on the volume" : "Review this change"}
+        confirmLabel={mode === "adopt" ? "Adopt into history" : "Save it"}
+        onConfirm={mode === "adopt" ? adoptDisk : confirmSave}
       />
 
       <RestoreDialog
@@ -413,6 +435,14 @@ export function ConfigPage() {
       />
     </Page>
   );
+}
+
+/**
+ * The cron projection is shown when the schedule is part of the change — the
+ * lines are only worth reading when they are about to move.
+ */
+function schedulesChanged(review: DryRun | null): boolean {
+  return Boolean(review?.diff?.changes.some((c) => c.group === "schedule"));
 }
 
 // ── the ladder ────────────────────────────────────────────────────────────

@@ -22,8 +22,8 @@ never be more than a few milliseconds.
 
 ## The window
 
-`schedule.weekday` / `schedule.weekend` are `HH:MM-HH:MM` in
-`schedule.timezone`. Outside the window the server answers claims with
+`schedule.windows` is a list of `{days, start, end}` blocks in
+`schedule.timezone`; a block that ends before it starts runs past midnight. Outside the window the server answers claims with
 `204` and `X-Claim-Status: window-shut`.
 
 `schedule.drain_before_minutes` is the tail of the window in which no *new*

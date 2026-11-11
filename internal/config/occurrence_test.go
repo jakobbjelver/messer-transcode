@@ -5,8 +5,13 @@ import (
 	"time"
 )
 
+// testSchedule builds the pre-windows form and migrates it, which is exactly
+// what a load does — so these tests exercise the compatibility path rather than
+// a hand-made windows literal.
 func testSchedule(wd, we string) Schedule {
-	return Schedule{Weekday: wd, Weekend: we, DrainBeforeMinutes: 0, Timezone: "UTC"}
+	s := Schedule{Weekday: wd, Weekend: we, DrainBeforeMinutes: 0, Timezone: "UTC"}
+	s.migrate()
+	return s
 }
 
 func at(y int, mo time.Month, d, h, m int) time.Time {
@@ -74,7 +79,8 @@ func TestOccurrencesRespectTheRange(t *testing.T) {
 
 func TestOccurrenceRespectsTheZone(t *testing.T) {
 	// A window in Stockholm is not a window in UTC.
-	s := Schedule{Weekday: "00:30-05:30", Weekend: "00:30-05:30", Timezone: "Europe/Stockholm"}
+	s := testSchedule("00:30-05:30", "00:30-05:30")
+	s.Timezone = "Europe/Stockholm"
 	occ, ok := s.OccurrenceAt(time.Date(2026, 11, 11, 23, 30, 0, 0, time.UTC)) // 00:30 local, winter
 	if !ok {
 		t.Fatal("23:30Z is 00:30 in Stockholm and should be inside the window")

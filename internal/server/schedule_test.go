@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"github.com/jakobbjelver/messer-transcode/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,10 +12,11 @@ import (
 
 func TestClaimsAllowed(t *testing.T) {
 	s := newTestServer(t)
-	s.cfg.Schedule.Weekday = "00:30-05:30"
-	s.cfg.Schedule.Weekend = "00:30-05:30"
-	s.cfg.Schedule.DrainBeforeMinutes = 15
-	s.cfg.Schedule.Timezone = "UTC"
+	s.config().Schedule = config.Schedule{
+		Windows:            []config.ScheduleWindow{{Days: []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}, Start: "00:30", End: "05:30"}},
+		DrainBeforeMinutes: 15,
+		Timezone:           "UTC",
+	}
 
 	at := func(h, m int) time.Time { return time.Date(2026, 11, 6, h, m, 0, 0, time.UTC) } // a Friday
 

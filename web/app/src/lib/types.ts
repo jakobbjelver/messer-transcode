@@ -38,9 +38,19 @@ export type StatusResponse = {
   live: Live | null;
 };
 
+/** One block of permitted work: the days it starts on, and its clock range. */
+export type ScheduleWindow = {
+  days: string[];
+  start: string;
+  end: string;
+};
+
 export type Schedule = {
-  weekday: string;
-  weekend: string;
+  /** The source of truth. */
+  windows?: ScheduleWindow[];
+  /** Legacy pre-windows form: accepted on the wire, migrated by the server. */
+  weekday?: string;
+  weekend?: string;
   drain_before_minutes: number;
   timezone: string;
 };
@@ -298,8 +308,13 @@ export type Diff = {
   text: string;
 };
 
+/** One window as the two cron lines a person would write. */
+export type CronLine = { open: string; close: string; window: string };
+
 export type DryRun = {
   ok: boolean;
+  /** The schedule the draft would run, projected for anything that speaks cron. */
+  schedule?: { cron: CronLine[]; drains: number };
   problems: Problem[];
   head_rev: number;
   head_sha: string;

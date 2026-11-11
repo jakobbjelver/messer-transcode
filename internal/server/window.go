@@ -1,86 +1,41 @@
 package server
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
 	"time"
 )
 
 // windowState reports whether the node may work now, the window it applies,
 // and — when shut — when it next opens.
+//
+// It reads the schedule through the same occurrence arithmetic the claims use,
+// so the badge and the claim path can never disagree about whether the window
+// is open. The previous version had its own string parsing, which is exactly
+// the kind of second implementation that goes stale the day the format changes.
 func (s *Server) windowState() (open bool, spec, nextAt string) {
-	loc := time.UTC
-	if s.config().Schedule.Timezone != "" {
-		if l, err := time.LoadLocation(s.config().Schedule.Timezone); err == nil {
-			loc = l
+	sched := s.config().Schedule
+	now := time.Now()
+	loc := sched.Location()
+
+	if occ, ok := sched.OccurrenceAt(now); ok {
+		return true, occ.Spec, ""
+	}
+
+	// Shut: name the next window that opens, and the one that would have been
+	// running now (so the badge still says what the schedule is).
+	if open, ok := sched.OccurrenceAt(now.Add(-24 * time.Hour)); ok {
+		spec = open.Spec
+	}
+	for _, occ := range sched.Occurrences(now, now.Add(8*24*time.Hour)) {
+		if occ.Start.After(now) {
+			return false, firstNonEmpty(spec, occ.Spec), occ.Start.In(loc).Format("Mon 15:04")
 		}
 	}
-	now := time.Now().In(loc)
-
-	spec = s.config().Schedule.Weekday
-	if wd := now.Weekday(); wd == time.Saturday || wd == time.Sunday {
-		spec = s.config().Schedule.Weekend
-	}
-
-	start, end, err := parseWindow(spec)
-	if err != nil {
-		return false, spec, "?"
-	}
-	open = withinWindow(now, start, end)
-	if !open {
-		nextAt = start.format()
-	}
-	return open, spec, nextAt
+	return false, spec, "?"
 }
 
-// clockMinute is a wall-clock time of day, with no date attached.
-type clockMinute struct {
-	h, m int
-}
-
-func (c clockMinute) format() string { return fmt.Sprintf("%02d:%02d", c.h, c.m) }
-
-// minutes returns the offset from midnight, so comparisons are arithmetic.
-func (c clockMinute) minutes() int { return c.h*60 + c.m }
-
-func parseWindow(spec string) (start, end clockMinute, err error) {
-	parts := strings.Split(spec, "-")
-	if len(parts) != 2 {
-		return start, end, fmt.Errorf("window %q is not HH:MM-HH:MM", spec)
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
 	}
-	start, err = parseClock(parts[0])
-	if err != nil {
-		return start, end, err
-	}
-	end, err = parseClock(parts[1])
-	return start, end, err
-}
-
-func parseClock(s string) (clockMinute, error) {
-	var c clockMinute
-	bits := strings.Split(strings.TrimSpace(s), ":")
-	if len(bits) != 2 {
-		return c, fmt.Errorf("clock %q is not HH:MM", s)
-	}
-	h, err := strconv.Atoi(bits[0])
-	if err != nil || h < 0 || h > 23 {
-		return c, fmt.Errorf("hour in %q is out of range", s)
-	}
-	m, err := strconv.Atoi(bits[1])
-	if err != nil || m < 0 || m > 59 {
-		return c, fmt.Errorf("minute in %q is out of range", s)
-	}
-	return clockMinute{h: h, m: m}, nil
-}
-
-// withinWindow handles the wrap-past-midnight case, which is the normal one:
-// 00:30-05:30 is the small hours of the same day, but 22:00-06:00 is not.
-func withinWindow(now time.Time, start, end clockMinute) bool {
-	cur := now.Hour()*60 + now.Minute()
-	s, e := start.minutes(), end.minutes()
-	if s <= e {
-		return cur >= s && cur < e
-	}
-	return cur >= s || cur < e
+	return b
 }

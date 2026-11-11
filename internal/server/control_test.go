@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"github.com/jakobbjelver/messer-transcode/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -87,8 +88,9 @@ func TestPausedQueueRefusesClaims(t *testing.T) {
 func TestWindowOverrideBeatsTheSchedule(t *testing.T) {
 	s := newTestServer(t)
 	// A window that is shut at every hour of the day: 00:00-00:01.
-	s.cfg.Schedule.Weekday = "00:00-00:01"
-	s.cfg.Schedule.Weekend = "00:00-00:01"
+	s.config().Schedule.Windows = []config.ScheduleWindow{
+		{Days: []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}, Start: "00:00", End: "00:01"},
+	}
 
 	if ok, _ := s.claimsAllowed(context.Background(), testNoon); ok {
 		t.Fatal("the shrunken window should be shut at noon")
@@ -104,7 +106,9 @@ func TestWindowOverrideBeatsTheSchedule(t *testing.T) {
 
 	// Closing it again refuses claims even if the schedule would allow them.
 	postJSON(t, s, "/api/v1/control/window", `{"action":"auto"}`, nil)
-	s.cfg.Schedule.Weekday = "00:00-23:59"
+	s.config().Schedule.Windows = []config.ScheduleWindow{
+		{Days: []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}, Start: "00:00", End: "23:59"},
+	}
 	postJSON(t, s, "/api/v1/control/window", `{"action":"close"}`, nil)
 	if ok, reason := s.claimsAllowed(context.Background(), testNoon); ok || reason != RefusedForced {
 		t.Fatalf("forced shut = %v %q, want false %q", ok, reason, RefusedForced)

@@ -15,10 +15,14 @@ func cp() *time.Location {
 	return l
 }
 
+// The same schedule the pre-windows config expressed as two strings: a
+// weekday block and a later weekend block.
 func sched() config.Schedule {
 	return config.Schedule{
-		Weekday:  "00:30-05:30",
-		Weekend:  "02:00-07:00",
+		Windows: []config.ScheduleWindow{
+			{Days: []string{"mon", "tue", "wed", "thu", "fri"}, Start: "00:30", End: "05:30"},
+			{Days: []string{"sat", "sun"}, Start: "02:00", End: "07:00"},
+		},
 		Timezone: "Europe/Copenhagen",
 	}
 }
@@ -64,7 +68,12 @@ func TestWindowsWeekend(t *testing.T) {
 // comes from the day it opened.
 func TestWindowWrapsMidnight(t *testing.T) {
 	loc := cp()
-	s := config.Schedule{Weekday: "23:00-03:00", Weekend: "23:00-03:00", Timezone: "Europe/Copenhagen"}
+	s := config.Schedule{
+		Windows: []config.ScheduleWindow{
+			{Days: []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}, Start: "23:00", End: "03:00"},
+		},
+		Timezone: "Europe/Copenhagen",
+	}
 	now := time.Date(2026, 11, 4, 1, 0, 0, 0, loc) // Wednesday 01:00, inside the window opened Tuesday
 	w := Windows(s, now, 1)[0]
 	if w.Start.Day() != 3 {
@@ -117,7 +126,13 @@ func TestWindowsOrderNewestFirst(t *testing.T) {
 // work happens at night.
 func TestDaytimeWindow(t *testing.T) {
 	loc := cp()
-	s := config.Schedule{Weekday: "09:00-17:00", Weekend: "10:00-14:00", Timezone: "Europe/Copenhagen"}
+	s := config.Schedule{
+		Windows: []config.ScheduleWindow{
+			{Days: []string{"mon", "tue", "wed", "thu", "fri"}, Start: "09:00", End: "17:00"},
+			{Days: []string{"sat", "sun"}, Start: "10:00", End: "14:00"},
+		},
+		Timezone: "Europe/Copenhagen",
+	}
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, loc)
 	w := Windows(s, now, 1)[0]
 	if w.Start.Hour() != 9 || w.End.Hour() != 17 {

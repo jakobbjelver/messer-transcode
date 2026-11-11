@@ -93,7 +93,15 @@ export function showValue(v: unknown): string {
   if (typeof v === "number") return String(v);
   if (typeof v === "string") return v === "" ? "(empty)" : v;
   if (Array.isArray(v)) return v.length === 0 ? "(none)" : v.map(showValue).join(", ");
-  if (typeof v === "object") return JSON.stringify(v);
+  if (typeof v === "object") {
+    // A window or a rule reads as itself, not as its JSON.
+    const o = v as Record<string, unknown>;
+    if (Array.isArray(o.days) && typeof o.start === "string" && typeof o.end === "string") {
+      return `${(o.days as string[]).join(", ")}, ${o.start}–${o.end}`;
+    }
+    if (typeof o.code === "string" && o.code) return `rule ${o.code}`;
+    return JSON.stringify(v);
+  }
   return String(v);
 }
 

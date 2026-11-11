@@ -21,7 +21,10 @@ func TestCollectReadsTheLedger(t *testing.T) {
 	}
 	defer func() { _ = st.Close() }()
 
-	sched := config.Schedule{Weekday: "00:30-05:30", Weekend: "00:30-05:30", Timezone: "UTC"}
+	sched := config.Schedule{
+		Windows:  []config.ScheduleWindow{{Days: []string{"mon", "tue", "wed", "thu", "fri", "sat", "sun"}, Start: "00:30", End: "05:30"}},
+		Timezone: "UTC",
+	}
 	// 02:00 on a day with a window, so the occurrence is deterministic.
 	now := time.Date(2026, 11, 11, 2, 0, 0, 0, time.UTC)
 	occ, ok := sched.OccurrenceAt(now)

@@ -169,18 +169,34 @@ func (c *Config) checkSchedule(ps *problems) {
 	if _, err := time.LoadLocation(c.Schedule.Timezone); err != nil {
 		ps.add("/schedule/timezone", "unknown IANA timezone %q", c.Schedule.Timezone)
 	}
-	for _, f := range []struct{ key, value string }{
-		{"weekday", c.Schedule.Weekday},
-		{"weekend", c.Schedule.Weekend},
-	} {
-		w, err := ParseWindow(f.value)
+	// Windows are migrated in on load, so an empty list here means the document
+	// named neither a window list nor the legacy pair.
+	if len(c.Schedule.Windows) == 0 {
+		ps.add("/schedule/windows", "the schedule needs at least one window")
+		return
+	}
+	for i, w := range c.Schedule.Windows {
+		at := fmt.Sprintf("/schedule/windows/%d", i)
+		if len(w.Days) == 0 {
+			ps.add(at+"/days", "a window needs at least one day")
+		}
+		for _, d := range w.Days {
+			if DayIndex(d) < 0 {
+				ps.add(at+"/days", "%q is not a day (mon…sun)", d)
+			}
+		}
+		r, err := ParseWindow(w.Start + "-" + w.End)
 		if err != nil {
-			ps.add("/schedule/"+f.key, "%s", err)
+			ps.add(at, "%s", err)
 			continue
 		}
-		if w.DurationMin() <= c.Schedule.DrainBeforeMinutes {
-			ps.add("/schedule/"+f.key, "window %s (%d min) is not longer than drain_before_minutes (%d)",
-				f.value, w.DurationMin(), c.Schedule.DrainBeforeMinutes)
+		if r.StartMin == r.EndMin {
+			ps.add(at, "a window cannot start and end at the same time")
+			continue
+		}
+		if r.DurationMin() <= c.Schedule.DrainBeforeMinutes {
+			ps.add(at, "window %s–%s (%d min) is not longer than drain_before_minutes (%d)",
+				w.Start, w.End, r.DurationMin(), c.Schedule.DrainBeforeMinutes)
 		}
 	}
 }
@@ -324,6 +340,13 @@ func ParseWindow(s string) (Window, error) {
 	b, err := parseClock(end)
 	if err != nil {
 		return Window{}, fmt.Errorf("window %q: %w", s, err)
+	}
+	// "22:00-00:00" is two hours, not twenty-six: a midnight end means the end
+	// of that same day. Without this, the only way to say "until midnight" is
+	// the 23:59 convention, and a schedule grid that ends a block at 24:00 would
+	// produce a window that wraps a full day.
+	if b == 0 && a > 0 {
+		b = 24 * 60
 	}
 	return Window{StartMin: a, EndMin: b}, nil
 }
