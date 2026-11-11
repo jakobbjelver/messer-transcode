@@ -464,8 +464,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func ctx(r *http.Request) context.Context { return r.Context() }
-
 func osStat(path string) (int64, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
