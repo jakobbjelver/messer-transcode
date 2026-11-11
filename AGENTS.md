@@ -65,6 +65,12 @@ make docker     # container image
   configured `server.url` (`http://127.0.0.1:8099`), so a host process there answers the live node's
   registration and silently takes the encoder out of service — it did exactly that for one window.
   Vite proxies `/api` to `VITE_API_ORIGIN`, default `http://127.0.0.1:8299`.
+- **The dev server is a PM2 pair, started from the Portal, not from a shell.** `transcode-dev` runs
+  `~/Scripts/run-transcode-dev.sh` (Go :8299 + Vite :5299, one PM2 app whose trap kills both) plus
+  `transcode-dev-watch` (idle scale-to-zero). Served at `transcode-dev.messer.wtf` / `transcode-dev.local`.
+  Config and queue are snapshots in `.dev/` (gitignored), never the production database. A dev server
+  started by hand is one that outlives the session that started it — `~/Scripts/dev-stray-guard.py
+  --sweep --repo messer-transcode` reaps any that appear.
 
 ## Working rules
 
