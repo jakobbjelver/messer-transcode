@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@import "./styles/messer/theme.css";
+@import "./styles/messer/type.css";
+@import "./styles/messer/brand.css";
+
+@source "./**/*.{ts,tsx}";
+
+/* Canon ships font stacks, not files: the app owns the @font-face. */
+@import "@fontsource-variable/golos-text";
+@import "@fontsource-variable/jetbrains-mono";

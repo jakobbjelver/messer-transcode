@@ -15,3 +15,6 @@
 *.swp
 .idea/
 .vscode/
+
+# working plans stay local: this repo is public
+/.hermes/

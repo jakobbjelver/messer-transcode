@@ -77,7 +77,7 @@ the replacement must be built rather than bought, and why parity is a low bar.
 | D10 | **Agent-first = machine-readable by default** | Every command takes `--json`; logs are structured; errors carry stable codes; `doctor` returns a verdict object. The UI is a layer on top, not the interface. |
 | D11 | **MIT licence from day one**, no server-specific defaults in code | The repo is intended to be publishable; personal values live in `config.json`. |
 | D12 | **Repo at `~/Repos/messer-transcode`**, module `github.com/jakobbjelver/messer-transcode` | Matches the existing repo layout and GitHub account. |
-| D13 | **UI is a "film slate"** — OpenCode-landing rigour with a film-lab twist | Borrows: `[*]`-style markers, hairline rules, oversized single claims, `Fig. n.` captions, monochrome, block-glyph wordmark, no cards/shadow/radius. Twist: timecode, frame counters, sprocket perforations, a slate as the dashboard. Detail in §9. |
+| D13 | ~~**UI is a "film slate"**~~ — **superseded by rev 10: the UI is a messer-ui port (React + shadcn).** The slate's *character* survives as copy and density, not as a hand-written stylesheet | Borrows: `[*]`-style markers, hairline rules, oversized single claims, `Fig. n.` captions, monochrome, block-glyph wordmark, no cards/shadow/radius. Twist: timecode, frame counters, sprocket perforations, a slate as the dashboard. Detail in §9. |
 | D14 | **Dev server on port 8099 with its own route**, not `:3000` | `:3000` is a one-at-a-time convention across all repos (`host-dev-server-pm2`); this server runs all day, so it must not contend. `transcode-dev.local` / `transcode-dev.messer.wtf`. |
 | D15 | **Publishing mirrors the other repos** — ghcr image + semantic-release + `komodo-deploy.mjs` | `server-portal` and `swiparr` already use `REGISTRY: ghcr.io`, owner-scoped `IMAGE_NAME`, conventional-commit releases. Reuse, do not invent. |
 | D16 | **Issue-only contribution policy** | No pull requests; contributing text in §10. Keeps a solo-maintained repo free of review overhead while staying genuinely open. |
@@ -566,7 +566,37 @@ CI runs unit/golden/integration on ubuntu (no VideoToolbox — use `libx265` in 
 
 ---
 
-## 9. UI design direction — "film slate"
+## 9. UI design direction — messer-ui (port 1)
+
+**Superseded 2026-11-11 (rev 10).** The original brief below described a hand-written "film slate"
+stylesheet in `internal/ui/static`. That layer is **deleted**: the UI is now a React SPA built with
+the shadcn CLI and the `jakobbjelver/messer-ui` registry, embedded in the same binary. The family
+canon — not a per-project stylesheet — owns colour, type, radius, density and interaction states.
+
+What the slate was *for* survives as copy and density, never as CSS:
+
+* **Vocabulary** — a section's label is a mono meta eyebrow (`the reclaim`, `the gate`), not `[01]`
+  and not `FIG. n`; the claim is an `h1` in Golos, one per page.
+* **Greyscale at rest** — the brand accent is achromatic (`oklch(.30 .008 260)`), so amber/green/red
+  stay meaningful as status. An in-flight job is a `neutral` badge with its own label (Encoding /
+  Verifying / Replacing): a warning triangle would assert a problem that is not there, and "live" is
+  carried by the moving progress bar. Amber appears only as the gate strip's live tick.
+* **Numbers** — tabular throughout, mono for meta, Golos for prose; `Stat` for figures, `Table` for
+  lists, `Progress` and a 60-tick strip for the queue.
+* **The one oversized claim** — the reclaimed GB is the page's `h1`, not a decorative hero block.
+
+| Concern | Where it lives now |
+|---|---|
+| Tokens, fonts, radius, states | `web/app/src/styles/messer/*` (written by `scripts/install.mjs`, never hand-edited) |
+| Shell, blocks | `web/app/src/components/ui/*` — installed copies; drift is a registry bug |
+| Atoms | `npx shadcn add …` into the same directory |
+| Brand | `messer-ui/brand/transcode.json` (neutral ink accent, Phosphor `FilmSlate` mark) |
+| App-only composition | `src/pages/*`, `src/components/{section,tick-strip,window-badge}.tsx` |
+
+**Gate:** `check.mjs --app . --static` and `blocks.mjs --app .` green in CI; the full pass
+(`check.mjs --url …/ui`) green before a release; screenshots at 1280/768/390 in both themes.
+
+<details><summary>Original brief (2026-11-06, superseded)</summary>
 
 Brief from the user: *wild and raw — think the OpenCode landing page, but with a twist to make it
 unique.* The reference was read on 2026-11-06 (opencode.ai): section markers rendered as `[*]`,
@@ -604,6 +634,8 @@ Tokens:
 
 **Gate at M3:** review the running dashboard against this brief at 1440 px and 390 px; the user signs
 off on the look before M4 starts. If it looks like every other admin panel, it has failed the brief.
+
+</details>
 
 ---
 
@@ -890,6 +922,30 @@ the quality target is the only dial.
   **Do not quote a nightly reclaim rate yet** — the only measured throughput is two files in 14
   minutes (one encode at 9×, one remux). A full night over the USB volume, with ingest and placement
   in the same window, is the first honest number, and it arrives tomorrow.
+
+- **rev 10** (2026-11-11): **the UI is a messer-ui port; the film slate is deleted.** The Go
+  templates (`internal/ui/templates/*`), `slate.css` and `logo.svg` are removed, with the page handlers
+  (`/`, `/queue`, `/files/{id}`, `/settings`, `/events`) and every view-model type. In their place:
+  a Vite + React 19 SPA in `web/app`, embedded by `web/web.go` (`//go:embed all:app/dist`) and served
+  at `/` with an index fallback, so the old deep links keep working with no redirect layer. Five
+  routes: Overview, Queue, Runs (new: `?last=30`), file detail, Settings.
+  **API delta:** `GET /api/v1/config` (build, paths, DB size, redacted config — the node token never
+  leaves the process), `GET /api/v1/stream` (typed SSE: window + dashboard + live, replacing the
+  template-shaped `GET /events`), and `/api/v1/files/{id}` now returns
+  `{file, expected_vmaf, nominal_height, reclaim_bytes, audio_list, sub_list}`. Node endpoints
+  untouched. `GET /api/v1/nope` answers a JSON 404 instead of `index.html`.
+  **Gates, measured:** `go test ./...` 17 ok (new tests: config redaction, file-detail contract,
+  decision filter, typed stream, JSON 404, SPA fallback, 503-when-unbuilt); `vitest` 39 passed;
+  `check.mjs --app . --static` green; `blocks.mjs --app .` 11/11 identical;
+  `brand-check.mjs --app .` exit 0; full `check.mjs --url …/ui` **green, 0 failures, 11 reference
+  warnings**; screenshots 1280/390 × both themes with no horizontal overflow and a theme toggle that
+  survives a reload.
+  **The one self-inflicted incident:** a dev server was started on `127.0.0.1:8099`, the container's
+  published port and the node's configured target, and it answered the live node's registration for
+  ~8 hours (`E_NODE_SILENT`, one window lost, 747 files untouched and queued). Dev servers now use
+  8299 (Go) and 5299 (Vite). Recorded in `AGENTS.md` and `MESSER.md`.
+  **Not done:** the image has not been built or deployed; the live container still runs `aba7a7f` with
+  the old UI. `docs/PLAN.md` §9 rewritten above; adoption record in `MESSER.md`.
 
 ### How to resume after a context reset
 

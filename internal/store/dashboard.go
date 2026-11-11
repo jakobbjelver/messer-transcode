@@ -254,6 +254,10 @@ func (f FileDetail) SubList() string {
 		}
 		parts = append(parts, s)
 	}
+	// "[]" is a file with no subtitle tracks, which reads as none — not as blank.
+	if len(parts) == 0 {
+		return "none"
+	}
 	return strings.Join(parts, " · ")
 }
 

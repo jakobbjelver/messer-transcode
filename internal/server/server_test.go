@@ -18,6 +18,8 @@ import (
 
 const testToken = "0123456789abcdef-token"
 
+func ptr[T any](v T) *T { return &v }
+
 func testConfig() *config.Config {
 	return &config.Config{
 		Version:   1,
@@ -28,8 +30,15 @@ func testConfig() *config.Config {
 		},
 		Workers: config.Workers{Encode: 1, Probe: 2, IngestBuffer: 2},
 		Paths:   config.Paths{Scratch: "/tmp/scratch", Quarantine: "/tmp/q"},
-		Quality: config.Quality{VMAFTarget: 95, VMAFTolerance: 1},
-		Server:  config.Server{Listen: ":8099", Token: testToken},
+		Quality: config.Quality{
+			VMAFTarget:    95,
+			VMAFTolerance: 1,
+			Table: []config.QualityRow{
+				{Codec: "h264", HeightGTE: 1080, Kbps: 6000, ExpectedVMAF: ptr(95.0)},
+				{Codec: "h264", HeightGTE: 720, Kbps: 2700, ExpectedVMAF: ptr(92.9)},
+			},
+		},
+		Server: config.Server{Listen: ":8099", Token: testToken},
 	}
 }
 
@@ -58,6 +67,26 @@ func newTestServer(t *testing.T) *Server {
 		t.Fatalf("seeded %d rows, want 2", len(rows))
 	}
 	for _, r := range rows {
+		// A probe is what makes a row real: dimensions pick the ladder tier and the
+		// audio/subtitle lists are what the detail screen shows. It must come before
+		// the decision, because probing resets the row's state.
+		probe := media.Probe{
+			Container:   "mkv",
+			VideoCodec:  "h264",
+			Width:       1920,
+			Height:      1080,
+			DurationS:   3600,
+			BitrateKbps: 8000,
+			SizeBytes:   r.SizeBytes,
+			Audio:       []media.AudioTrack{{Lang: "eng", Codec: "eac3", Channels: 6}},
+		}
+		if strings.Contains(r.Path, "Film Two") {
+			probe.Width, probe.Height, probe.BitrateKbps = 1280, 720, 1500
+		}
+		if err := st.SetProbe(ctx, r.ID, probe, "probe-"+strconv.FormatInt(r.ID, 10), nil); err != nil {
+			t.Fatal(err)
+		}
+
 		if strings.Contains(r.Path, "Film One") {
 			err = st.SetDecision(ctx, r.ID, store.Decision{
 				Decision: "encode", Code: "R_H264_ENCODE", Reason: "1080p H.264 at 8000 kbps",
@@ -83,31 +112,42 @@ func get(t *testing.T, s *Server, path string) *httptest.ResponseRecorder {
 	return rec
 }
 
-func TestPagesRender(t *testing.T) {
+// The SPA owns every non-API path. With a built frontend that is 200 and
+// index.html; on a checkout where `make web` has not run it is 503 with one
+// sentence. Either way it is never a JSON error and never a 404 — the routing
+// contract is the server's, the content is web's (see web/web_test.go).
+func TestAppRoutesReachTheSPA(t *testing.T) {
 	s := newTestServer(t)
-
-	cases := []struct {
-		path   string
-		expect []string
-	}{
-		{"/", []string{"Messer", "The count", "to encode", "WINDOW"}},
-		{"/queue", []string{"The queue", "R_H264_ENCODE", "Film One"}},
-		{"/queue?decision=skip", []string{"Film Two"}},
-		{"/settings", []string{"Configured behaviour", "listen"}},
-		{"/files/1", []string{"Source", "Reclaim"}},
+	for _, p := range []string{"/", "/queue", "/queue?decision=skip", "/files/1", "/settings", "/runs"} {
+		rec := get(t, s, p)
+		if rec.Code != http.StatusOK && rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s: status %d, want 200 (built) or 503 (not built)", p, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), `"error"`) {
+			t.Errorf("%s: answered with the JSON error envelope", p)
+		}
 	}
-	for _, tc := range cases {
-		rec := get(t, s, tc.path)
-		if rec.Code != http.StatusOK {
-			t.Errorf("%s: status %d, body %s", tc.path, rec.Code, rec.Body.String()[:200])
-			continue
-		}
-		body := rec.Body.String()
-		for _, want := range tc.expect {
-			if !strings.Contains(body, want) {
-				t.Errorf("%s: body missing %q", tc.path, want)
-			}
-		}
+}
+
+// An unknown /api path must not fall through to index.html: a client parsing
+// HTML as JSON reports the wrong fault.
+func TestUnknownAPIPathIsJSON404(t *testing.T) {
+	s := newTestServer(t)
+	rec := get(t, s, "/api/v1/nope")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status %d, want 404", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("content type %q, want application/json", ct)
+	}
+	var body struct {
+		Error struct{ Code, Message string }
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if body.Error.Code != "E_NO_ROUTE" {
+		t.Errorf("code %q, want E_NO_ROUTE", body.Error.Code)
 	}
 }
 
@@ -115,7 +155,7 @@ func TestPagesRender(t *testing.T) {
 // empty page: the agent path reads the code.
 func TestUnknownFileIs404JSON(t *testing.T) {
 	s := newTestServer(t)
-	rec := get(t, s, "/files/9999")
+	rec := get(t, s, "/api/v1/files/9999")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status %d, want 404", rec.Code)
 	}
