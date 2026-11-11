@@ -22,7 +22,8 @@ import (
 // `config diff` before `config save` is the same review the dialog performs.
 func cmdConfig(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, `usage: messer-transcode config <verb> [flags]
+		// A closed pipe is not a failure of the command; same rule as say().
+		_, _ = fmt.Fprint(stderr, `usage: messer-transcode config <verb> [flags]
 
   show                     the running configuration, as JSON
   history [-n 20]          the revision list
