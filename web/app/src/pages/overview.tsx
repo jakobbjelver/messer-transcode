@@ -243,10 +243,12 @@ function RunRow({ run }: { run: Run }) {
   return (
     <TableRow>
       <TableCell className="whitespace-nowrap">
-        <span className="text-[var(--text-2)]">{day(run.Start)}</span>{" "}
-        <span className="m-data text-[var(--text-3)]">
-          {timeOfDay(run.Start)}–{timeOfDay(run.End)}
-        </span>
+        <Link to={`/runs/${run.id}`} className="underline-offset-4 hover:underline">
+          <span className="text-[var(--text-2)]">{day(run.Start)}</span>{" "}
+          <span className="m-data text-[var(--text-3)]">
+            {timeOfDay(run.Start)}–{timeOfDay(run.End)}
+          </span>
+        </Link>
         {run.Open ? (
           <span className="ml-2 align-middle">
             <StatusBadge status="neutral">live</StatusBadge>

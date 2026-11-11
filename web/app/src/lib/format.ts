@@ -16,6 +16,21 @@ export function gb(n: number): string {
   return (n / 1e9).toFixed(1);
 }
 
+/**
+ * A size delta as it should be read: "8.6 GB" when the file shrank, "+3.1 MB"
+ * when it grew (a remux that added a track does), "—" when nothing changed.
+ *
+ * Sub-gigabyte deltas stay in MB/GB on their own scale, because "0.0 GB" is a
+ * number that says nothing.
+ */
+export function saving(saved: number): string {
+  if (!Number.isFinite(saved) || saved === 0) return "—";
+  const sign = saved < 0 ? "+" : "";
+  const abs = Math.abs(saved);
+  if (abs >= 1e9) return `${sign}${gb(abs)} GB`;
+  return `${sign}${bytes(abs)}`;
+}
+
 export function kbps(n: number): string {
   return n > 0 ? n.toLocaleString("en-GB") + " kbps" : "—";
 }

@@ -118,6 +118,11 @@ func (s *Server) apiWindow(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
 		return
 	}
+	if req.Action != "open" {
+		// The forced session is over: its run ends with it, so the ledger does
+		// not leave a manual row open for days.
+		_, _ = s.st.CloseManualRuns(r.Context(), time.Now().Unix())
+	}
 	if err := s.st.Event(r.Context(), "warn", "M_WINDOW", 0, message, ""); err != nil {
 		s.log.Warn("event write failed", "code", "M_WINDOW", "err", err)
 	}

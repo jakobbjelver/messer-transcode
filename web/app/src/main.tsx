@@ -10,6 +10,7 @@ import { FilePage } from "@/pages/file";
 import { NotFoundPage } from "@/pages/not-found";
 import { OverviewPage } from "@/pages/overview";
 import { QueuePage } from "@/pages/queue";
+import { RunPage } from "@/pages/run";
 import { RunsPage } from "@/pages/runs";
 import { SettingsPage } from "@/pages/settings";
 import { queryClient } from "@/lib/query";
@@ -30,6 +31,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/queue" element={<QueuePage />} />
               <Route path="/files/:id" element={<FilePage />} />
               <Route path="/runs" element={<RunsPage />} />
+              <Route path="/runs/:id" element={<RunPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               {Sink ? (
                 <Route

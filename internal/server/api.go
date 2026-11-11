@@ -370,7 +370,7 @@ func (s *Server) nodeClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	work, err := s.st.ClaimWork(r.Context(), 1)
+	work, err := s.st.ClaimWork(r.Context(), 1, s.currentRunID(r.Context()))
 	if err != nil {
 		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
 		return

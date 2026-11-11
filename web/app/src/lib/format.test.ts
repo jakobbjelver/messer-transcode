@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bytes, clock, day, duration, fileName, gb, kbps, pct, timeOfDay } from "./format";
+import { bytes, clock, day, duration, fileName, gb, kbps, pct, saving, timeOfDay } from "./format";
 
 describe("bytes", () => {
   it("uses two decimals above a terabyte", () => expect(bytes(1.5e12)).toBe("1.50 TB"));
@@ -48,4 +48,10 @@ describe("day and timeOfDay", () => {
 describe("fileName", () => {
   it("takes the last segment", () => expect(fileName("/media/Film One/one.mkv")).toBe("one.mkv"));
   it("returns the input when there is no slash", () => expect(fileName("one.mkv")).toBe("one.mkv"));
+});
+
+describe("saving", () => {
+  it("shows a shrink in GB with one decimal", () => expect(saving(8_600_000_000)).toBe("8.6 GB"));
+  it("shows growth with a plus, on its own scale", () => expect(saving(-3_100_000)).toBe("+3.1 MB"));
+  it("says nothing when nothing changed", () => expect(saving(0)).toBe("—"));
 });

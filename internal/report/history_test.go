@@ -49,7 +49,20 @@ func TestHistorySurvivesAStateChange(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	jobs, err := st.ClaimWork(ctx, 2)
+	// The run this work belongs to, recorded before the claim — that is the
+	// contract the ledger added.
+	start := time.Now().Add(-2 * time.Hour)
+	runID := start.Unix()
+	if _, err := st.EnsureRun(ctx, store.RunRow{
+		ID:      runID,
+		StartAt: runID,
+		EndAt:   time.Now().Add(2 * time.Hour).Unix(),
+		Spec:    "test",
+		Kind:    "weekday",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := st.ClaimWork(ctx, 2, runID)
 	if err != nil || len(jobs) != 2 {
 		t.Fatalf("claim: %v (%d jobs)", err, len(jobs))
 	}
@@ -67,11 +80,15 @@ func TestHistorySurvivesAStateChange(t *testing.T) {
 		}
 	}
 
-	w := Window{Start: time.Now().Add(-2 * time.Hour), End: time.Now().Add(2 * time.Hour)}
-	got, err := one(ctx, st, w, time.Now())
+	row, err := st.RunRowByID(ctx, runID)
 	if err != nil {
 		t.Fatal(err)
 	}
+	aggs, err := st.RunAggregates(ctx, []int64{runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := FromRow(row, aggs[runID], time.Now())
 	if got.Done != 2 {
 		t.Fatalf("done = %d, want 2 — a re-decide erased the run", got.Done)
 	}

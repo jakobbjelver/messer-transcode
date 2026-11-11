@@ -20,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, asApiError, type FileQuery, type QueueAction } from "@/lib/api";
 import { actionNote } from "@/lib/control";
-import { bytes, fileName, gb, kbps, pct, stamp } from "@/lib/format";
+import { bytes, fileName, kbps, pct, saving, stamp } from "@/lib/format";
 import { qk } from "@/lib/keys";
 import { columnsFor, queueHref, TABS, tabFrom, type Column } from "@/lib/queue";
 import { statePresentation } from "@/lib/status";
@@ -404,7 +404,7 @@ function Cell({
       );
     }
     case "why":
-      return <TableCell className={cls}>{row.reason_code || "—"}</TableCell>;
+      return <TableCell className={cls}>{row.last_error_code || row.reason_code || "—"}</TableCell>;
     case "source":
       return <TableCell className={cls}>{row.bitrate_kbps ? kbps(row.bitrate_kbps) : "—"}</TableCell>;
     case "target":
@@ -417,24 +417,22 @@ function Cell({
       // A remux can grow a file (an added track), and a done row from before
       // the finish payload carried sizes has none: show the honest delta and
       // never invent a percentage over a zero denominator.
-      const delta = (row.bytes_after ?? 0) - (row.bytes_before ?? 0);
-      if (!row.bytes_before || delta === 0) {
+      const saved = (row.bytes_before ?? 0) - (row.bytes_after ?? 0);
+      if (!row.bytes_before || saved === 0) {
         return (
           <TableCell className={`m-data ${cls}`}>
             {row.decision === "remux" ? <span className="text-[var(--text-3)]">remux</span> : "—"}
           </TableCell>
         );
       }
-      if (delta > 0) {
+      if (saved > 0) {
         return (
           <TableCell className={`m-data ${cls}`}>
-            {gb(delta)} GB <span className="text-[var(--text-3)]">{pct((delta / row.bytes_before) * 100)}</span>
+            {saving(saved)} <span className="text-[var(--text-3)]">{pct((saved / row.bytes_before) * 100)}</span>
           </TableCell>
         );
       }
-      return (
-        <TableCell className={`m-data ${cls} text-[var(--text-3)]`}>+{gb(-delta)} GB</TableCell>
-      );
+      return <TableCell className={`m-data ${cls} text-[var(--text-3)]`}>{saving(saved)}</TableCell>;
     }
     case "vmaf":
       return <TableCell className={`m-data ${cls}`}>{row.vmaf ? row.vmaf.toFixed(1) : "—"}</TableCell>;
