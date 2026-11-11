@@ -213,7 +213,7 @@ function Row({ col, row, runID }: { col: Col; row: FileRow; runID: number }) {
         <TableCell className="max-w-[16rem] truncate">
           <Link
             to={`/files/${row.id}`}
-            state={{ from: { to: `/runs/${runID}`, label: "Runs" } }}
+            state={{ from: { to: `/runs/${runID}`, label: "this run" } }}
             title={row.path}
             className="underline-offset-4 hover:underline"
           >
