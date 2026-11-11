@@ -6,6 +6,8 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import "./index.css";
 import { AppChrome } from "@/components/app-chrome";
 import { StreamProvider } from "@/components/stream-provider";
+import { ConfigPage } from "@/pages/config";
+import { ConfigHistoryPage } from "@/pages/config-history";
 import { FilePage } from "@/pages/file";
 import { NotFoundPage } from "@/pages/not-found";
 import { OverviewPage } from "@/pages/overview";
@@ -30,6 +32,8 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/" element={<OverviewPage />} />
               <Route path="/queue" element={<QueuePage />} />
               <Route path="/files/:id" element={<FilePage />} />
+              <Route path="/config" element={<ConfigPage />} />
+              <Route path="/config/history" element={<ConfigHistoryPage />} />
               <Route path="/runs" element={<RunsPage />} />
               <Route path="/runs/:id" element={<RunPage />} />
               <Route path="/settings" element={<SettingsPage />} />

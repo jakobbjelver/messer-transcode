@@ -11,16 +11,16 @@ import (
 // and — when shut — when it next opens.
 func (s *Server) windowState() (open bool, spec, nextAt string) {
 	loc := time.UTC
-	if s.cfg.Schedule.Timezone != "" {
-		if l, err := time.LoadLocation(s.cfg.Schedule.Timezone); err == nil {
+	if s.config().Schedule.Timezone != "" {
+		if l, err := time.LoadLocation(s.config().Schedule.Timezone); err == nil {
 			loc = l
 		}
 	}
 	now := time.Now().In(loc)
 
-	spec = s.cfg.Schedule.Weekday
+	spec = s.config().Schedule.Weekday
 	if wd := now.Weekday(); wd == time.Saturday || wd == time.Sunday {
-		spec = s.cfg.Schedule.Weekend
+		spec = s.config().Schedule.Weekend
 	}
 
 	start, end, err := parseWindow(spec)

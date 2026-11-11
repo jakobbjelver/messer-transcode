@@ -35,6 +35,8 @@ commands:
   calibrate               measure the VMAF/bitrate curve of this library
   queue <verb>            steer the queue: pause, resume, open, close, auto,
                           retry <id>, skip <id>, priority <id> <next|normal|last>
+  config <verb>           version the configuration: show, history, diff,
+                          save <file|->, adopt, revert <rev>
   schema                  print the JSON Schema for config.json
   help                    this text
 
@@ -101,6 +103,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return cmdCalibrate(stdout, stderr, rest[1:], jsonOut)
 	case "queue":
 		return cmdQueue(stdout, stderr, rest[1:], jsonOut)
+	case "config":
+		return cmdConfig(stdout, stderr, rest[1:], jsonOut)
 	default:
 		say(stderr, "unknown command %q\n\n%s", rest[0], usageText)
 		return ExitUsage

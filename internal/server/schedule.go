@@ -47,16 +47,16 @@ func (s *Server) claimsAllowed(ctx context.Context, now time.Time) (bool, string
 	// window and cost a night, while allowing is exactly what the config says.
 
 	loc := time.UTC
-	if s.cfg.Schedule.Timezone != "" {
-		if l, err := time.LoadLocation(s.cfg.Schedule.Timezone); err == nil {
+	if s.config().Schedule.Timezone != "" {
+		if l, err := time.LoadLocation(s.config().Schedule.Timezone); err == nil {
 			loc = l
 		}
 	}
 	local := now.In(loc)
 
-	spec := s.cfg.Schedule.Weekday
+	spec := s.config().Schedule.Weekday
 	if wd := local.Weekday(); wd == time.Saturday || wd == time.Sunday {
-		spec = s.cfg.Schedule.Weekend
+		spec = s.config().Schedule.Weekend
 	}
 	start, end, err := parseWindow(spec)
 	if err != nil {
@@ -66,7 +66,7 @@ func (s *Server) claimsAllowed(ctx context.Context, now time.Time) (bool, string
 		return false, RefusedWindow
 	}
 
-	drain := time.Duration(s.cfg.Schedule.DrainBeforeMinutes) * time.Minute
+	drain := time.Duration(s.config().Schedule.DrainBeforeMinutes) * time.Minute
 	if drain > 0 && minutesUntilClose(local, end) <= drain {
 		return false, RefusedDraining
 	}

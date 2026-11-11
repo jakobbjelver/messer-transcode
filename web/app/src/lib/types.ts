@@ -171,13 +171,151 @@ export type HealthReport = {
   duration_ms: number;
 };
 
+// ── configuration ─────────────────────────────────────────────────────────
+//
+// These mirror internal/config exactly, including the fields a document may
+// omit: absent and null both mean "not configured", and the server's renderer
+// only ever writes keys the schema accepts.
+
+export type Library = { name: string; root: string; extensions: string[]; exclude?: string[] };
+
+export type QualityRow = { codec: string; height_gte: number; kbps: number; expected_vmaf?: number };
+
+export type Quality = {
+  mode: string;
+  vmaf_target: number;
+  vmaf_tolerance: number;
+  table: QualityRow[];
+  probe_outliers_above_kbps: number;
+  min_saving_pct?: number;
+};
+
+export type AudioTranscode = { from: string[]; to: string; kbps: number };
+
+export type Audio = {
+  keep_languages?: string[];
+  keep_original_language: boolean;
+  max_tracks: number;
+  drop_commentary: boolean;
+  transcode?: AudioTranscode[];
+};
+
+export type Subtitles = {
+  keep_languages?: string[];
+  drop_commentary: boolean;
+  drop_closed_captions: boolean;
+  keep_forced: boolean;
+};
+
+export type Condition = {
+  height_lt?: number;
+  height_gte?: number;
+  codec?: string;
+  bitrate_kbps_lt?: number;
+  bitrate_kbps_gte?: number;
+  audio_codec_in?: string[];
+  audio_tracks_gt?: number;
+  default?: boolean;
+};
+
+export type Rule = { when: Condition; do: string; code: string };
+
+export type Safety = {
+  min_free_gb: number;
+  size_ratio_min: number;
+  size_ratio_max: number;
+  duration_tolerance_s: number;
+  keep_quarantine_days: number;
+  verify_sample_seconds: number;
+  verify_vmaf: boolean;
+  max_attempts: number;
+  quarantine?: string;
+};
+
+export type Notify = { radarr?: string; sonarr?: string; on?: string[]; jellyfin_refresh: boolean };
+
+export type Workers = { encode: number; probe: number; ingest_buffer: number };
+
+export type Paths = { scratch: string; quarantine: string };
+
+export type ServerSettings = { listen: string; token?: string; url?: string };
+
+/** A whole config.json. */
+export type ConfigDoc = {
+  version: number;
+  libraries: Library[];
+  schedule: Schedule;
+  workers: Workers;
+  paths: Paths;
+  quality: Quality;
+  audio: Audio;
+  subtitles: Subtitles;
+  rules: Rule[];
+  safety: Safety;
+  notify: Notify;
+  server: ServerSettings;
+};
+
+/** Where the file on the volume stands relative to the newest revision. */
+export type ConfigState = {
+  head_rev: number;
+  head_sha: string;
+  /** "" is clean; "edited" is a hand edit; "invalid" is one that will not load. */
+  dirty: "" | "edited" | "absent" | "invalid";
+  disk_sha: string;
+  disk_error?: string;
+  /** "live" or "next claim". */
+  applies: string;
+  running_sha: string;
+};
+
+export type Revision = {
+  rev: number;
+  sha: string;
+  created_at: number;
+  actor: string;
+  message: string;
+  parent_rev?: number;
+};
+
+export type Problem = { path: string; message: string };
+
+export type ChangeKind = "add" | "remove" | "change" | "reorder";
+
+export type Change = {
+  path: string;
+  kind: ChangeKind;
+  label: string;
+  group: string;
+  before?: unknown;
+  after?: unknown;
+};
+
+export type Diff = {
+  summary: { added: number; removed: number; changed: number; reordered: number };
+  groups: { key: string; label: string; count: number }[];
+  changes: Change[];
+  text: string;
+};
+
+export type DryRun = {
+  ok: boolean;
+  problems: Problem[];
+  head_rev: number;
+  head_sha: string;
+  sha: string;
+  state: ConfigState;
+  diff?: Diff;
+};
+
 export type ConfigResponse = {
   version: VersionInfo;
   uptime_seconds: number;
   config_path: string;
   db_path: string;
   db_size_bytes: number;
-  config: Record<string, unknown>;
+  config: ConfigDoc;
+  state: ConfigState;
 };
 
 export type StreamPulse = {

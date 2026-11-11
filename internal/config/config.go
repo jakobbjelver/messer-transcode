@@ -106,11 +106,11 @@ type QualityRow struct {
 
 // Audio controls track retention and lossless-to-lossy conversion.
 type Audio struct {
-	KeepLanguages        []string         `json:"keep_languages"`
+	KeepLanguages        []string         `json:"keep_languages,omitempty"`
 	KeepOriginalLanguage bool             `json:"keep_original_language"`
 	MaxTracks            int              `json:"max_tracks"`
 	DropCommentary       bool             `json:"drop_commentary"`
-	Transcode            []AudioTranscode `json:"transcode"`
+	Transcode            []AudioTranscode `json:"transcode,omitempty"`
 }
 
 // AudioTranscode converts a set of source codecs to one target codec.
@@ -122,7 +122,7 @@ type AudioTranscode struct {
 
 // Subtitles controls text-track retention.
 type Subtitles struct {
-	KeepLanguages      []string `json:"keep_languages"`
+	KeepLanguages      []string `json:"keep_languages,omitempty"`
 	DropCommentary     bool     `json:"drop_commentary"`
 	DropClosedCaptions bool     `json:"drop_closed_captions"`
 	KeepForced         bool     `json:"keep_forced"`
@@ -179,7 +179,7 @@ func (s Safety) QuarantineEnabled() bool { return s.Quarantine != "off" }
 type Notify struct {
 	Radarr          string   `json:"radarr,omitempty"`
 	Sonarr          string   `json:"sonarr,omitempty"`
-	On              []string `json:"on"`
+	On              []string `json:"on,omitempty"`
 	JellyfinRefresh bool     `json:"jellyfin_refresh"`
 }
 
@@ -188,7 +188,7 @@ type Notify struct {
 // endpoint that can claim jobs.
 type Server struct {
 	Listen string `json:"listen"`
-	Token  string `json:"token"`
+	Token  string `json:"token,omitempty"`
 	// URL is where the node finds the orchestrator. The server ignores it; it
 	// exists so both roles read one config file instead of two.
 	URL string `json:"url,omitempty"`

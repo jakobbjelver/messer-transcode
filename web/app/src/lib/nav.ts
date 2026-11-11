@@ -5,6 +5,7 @@ export const PAGES = {
   "/": "Overview",
   "/queue": "Queue",
   "/runs": "Runs",
+  "/config": "Config",
   "/settings": "Settings",
 } as const;
 

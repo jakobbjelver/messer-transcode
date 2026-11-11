@@ -1,4 +1,6 @@
+import { Sliders } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import { Page } from "@/components/page";
 import { RefreshButton } from "@/components/refresh-button";
@@ -45,16 +47,23 @@ export function SettingsPage() {
     <Page>
       <PageHeader
         eyebrow="settings"
-        title="What this orchestrator is and how it is configured"
-        description="Read-only: the config file is the interface (plan D10), and the CLI is how it changes."
+        title="What this orchestrator is and what it is made of"
+        description="The build, the store, and the checks. The configuration has its own screen now, with its history."
         actions={
-          <RefreshButton
-            busy={config.isFetching || health.isFetching}
-            onRefresh={() => {
-              void config.refetch();
-              void health.refetch();
-            }}
-          />
+          <>
+            <Link to="/config">
+              <Button variant="outline">
+                <Sliders className="size-4" /> Configuration
+              </Button>
+            </Link>
+            <RefreshButton
+              busy={config.isFetching || health.isFetching}
+              onRefresh={() => {
+                void config.refetch();
+                void health.refetch();
+              }}
+            />
+          </>
         }
       />
 

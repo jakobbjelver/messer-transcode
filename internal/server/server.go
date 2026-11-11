@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jakobbjelver/messer-transcode/internal/config"
@@ -20,8 +22,17 @@ import (
 
 // Server holds what every handler needs. No mutable request state lives here;
 // progress is in the database so that any process can read it.
+//
+// The config is the one mutable field: it is swapped when a save or a hand edit
+// changes it, so every read goes through config() and every write through
+// install(). A reader must never see a half-applied config.
 type Server struct {
+	cfgMu   sync.RWMutex
 	cfg     *config.Config
+	cfgSHA  string
+	diskSHA string
+	diskErr string
+
 	st      *store.Store
 	cfgPath string
 	dbPath  string
@@ -30,11 +41,20 @@ type Server struct {
 }
 
 // New wires a server. The logger may be nil, which silences request logs.
+//
+// cfgSHA is the fingerprint of the config as loaded, so the watcher and the
+// dirty indicator know what "unchanged" means from the first request.
 func New(cfg *config.Config, st *store.Store, cfgPath, dbPath string, log *slog.Logger) *Server {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Server{cfg: cfg, st: st, cfgPath: cfgPath, dbPath: dbPath, started: time.Now(), log: log}
+	s := &Server{cfg: cfg, st: st, cfgPath: cfgPath, dbPath: dbPath, started: time.Now(), log: log}
+	if raw, err := os.ReadFile(cfgPath); err == nil {
+		if sha, err := config.Fingerprint(raw); err == nil {
+			s.cfgSHA, s.diskSHA = sha, sha
+		}
+	}
+	return s
 }
 
 // Handler returns the full route table.
@@ -46,13 +66,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/health", s.apiHealth)
 	mux.HandleFunc("GET /api/v1/runs", s.apiRuns)
 	mux.HandleFunc("GET /api/v1/runs/{id}", s.apiRun)
+	mux.HandleFunc("GET /api/v1/config", s.apiConfig)
+	mux.HandleFunc("POST /api/v1/config", s.apiConfigSave)
+	mux.HandleFunc("POST /api/v1/config/dry-run", s.apiConfigDryRun)
+	mux.HandleFunc("POST /api/v1/config/adopt", s.apiConfigAdopt)
+	mux.HandleFunc("POST /api/v1/config/revert/{rev}", s.apiConfigRevert)
+	mux.HandleFunc("GET /api/v1/config/history", s.apiConfigHistory)
+	mux.HandleFunc("GET /api/v1/config/diff", s.apiConfigDiff)
+	mux.HandleFunc("GET /api/v1/config/revisions/{rev}", s.apiConfigRevision)
 	mux.HandleFunc("GET /api/v1/status", s.apiStatus)
 	mux.HandleFunc("GET /api/v1/live", s.apiLive)
 	mux.HandleFunc("GET /api/v1/files", s.apiFiles)
 	mux.HandleFunc("GET /api/v1/files/{id}", s.apiFile)
 	mux.HandleFunc("GET /api/v1/queue", s.apiQueue)
 	mux.HandleFunc("GET /api/v1/events", s.apiEvents)
-	mux.HandleFunc("GET /api/v1/config", s.apiConfig)
 	mux.HandleFunc("GET /api/v1/stream", s.apiStream)
 
 	// Steering. Every one of these writes; the read side is /api/v1/control.
