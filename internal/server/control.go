@@ -75,9 +75,9 @@ func (s *Server) apiPause(w http.ResponseWriter, r *http.Request) {
 
 // apiWindow forces the window open or shut, or hands it back to the schedule.
 //
-//   open  minutes>0 → for that long; minutes==0 → until somebody says otherwise
-//   close → refuse new claims now, no expiry ("stop after this file")
-//   auto  → the schedule is in charge again
+//	open  minutes>0 → for that long; minutes==0 → until somebody says otherwise
+//	close → refuse new claims now, no expiry ("stop after this file")
+//	auto  → the schedule is in charge again
 func (s *Server) apiWindow(w http.ResponseWriter, r *http.Request) {
 	if !guardJSON(w, r) {
 		return
@@ -131,9 +131,15 @@ func (s *Server) apiWindow(w http.ResponseWriter, r *http.Request) {
 
 // ── queue actions ─────────────────────────────────────────────────────────
 
-func (s *Server) apiFileRetry(w http.ResponseWriter, r *http.Request)    { s.fileAction(w, r, store.ActRetry) }
-func (s *Server) apiFileSkip(w http.ResponseWriter, r *http.Request)     { s.fileAction(w, r, store.ActSkip) }
-func (s *Server) apiFilePriority(w http.ResponseWriter, r *http.Request) { s.fileAction(w, r, store.ActPriority) }
+func (s *Server) apiFileRetry(w http.ResponseWriter, r *http.Request) {
+	s.fileAction(w, r, store.ActRetry)
+}
+func (s *Server) apiFileSkip(w http.ResponseWriter, r *http.Request) {
+	s.fileAction(w, r, store.ActSkip)
+}
+func (s *Server) apiFilePriority(w http.ResponseWriter, r *http.Request) {
+	s.fileAction(w, r, store.ActPriority)
+}
 
 func (s *Server) fileAction(w http.ResponseWriter, r *http.Request, action string) {
 	if !guardJSON(w, r) {

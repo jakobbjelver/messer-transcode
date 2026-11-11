@@ -145,13 +145,13 @@ func TestCheckCatches(t *testing.T) {
 			want: "has no av1 rows",
 		},
 		{
-			name:   "window shorter than drain",
+			name: "window shorter than drain",
 			mutate: func(c *Config) {
 				// The migrated config has windows; a legacy field would be
 				// ignored, which is what the migration is for.
 				c.Schedule.Windows = []ScheduleWindow{{Days: []string{"mon"}, Start: "05:00", End: "05:10"}}
 			},
-			want:   "not longer than drain_before_minutes",
+			want: "not longer than drain_before_minutes",
 		},
 		{
 			name:   "unknown timezone",
