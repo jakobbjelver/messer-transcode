@@ -934,7 +934,7 @@ the quality target is the only dial.
   template-shaped `GET /events`), and `/api/v1/files/{id}` now returns
   `{file, expected_vmaf, nominal_height, reclaim_bytes, audio_list, sub_list}`. Node endpoints
   untouched. `GET /api/v1/nope` answers a JSON 404 instead of `index.html`.
-  **Gates, measured:** `go test ./...` 17 ok (new tests: config redaction, file-detail contract,
+  **Gates, measured:** `go test ./...` 14 packages ok, 3 with no test files (new tests: config redaction, file-detail contract,
   decision filter, typed stream, JSON 404, SPA fallback, 503-when-unbuilt); `vitest` 39 passed;
   `check.mjs --app . --static` green; `blocks.mjs --app .` 11/11 identical;
   `brand-check.mjs --app .` exit 0; full `check.mjs --url …/ui` **green, 0 failures, 11 reference
