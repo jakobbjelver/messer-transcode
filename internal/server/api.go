@@ -29,8 +29,12 @@ func (s *Server) apiStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	open, spec, next := s.windowState()
 	live, hasLive, _ := s.st.Live(ctx)
+	// Same revision the stream carries, so a page that loaded over HTTP and one
+	// that caught up over SSE agree on what "current" means.
+	rev, _ := s.st.MaxEventID(ctx)
 
 	resp := map[string]any{
+		"rev": rev,
 		"version": map[string]string{
 			"version":    version.Version,
 			"commit":     version.Commit,
@@ -205,7 +209,12 @@ func (s *Server) apiConfig(w http.ResponseWriter, r *http.Request) {
 // than the template-shaped string map the old pages patched into data-live
 // nodes: the client should not inherit one UI's plumbing.
 type streamPulse struct {
-	At        int64            `json:"at"`
+	At int64 `json:"at"`
+	// Rev is the newest event id. The client compares it to decide whether its
+	// cached pages are stale — one integer instead of four "did anything move?"
+	// requests. Events are what a queue change writes, so it moves exactly when
+	// the queue, the runs or the feed changed.
+	Rev       int64            `json:"rev"`
 	Window    streamWindow     `json:"window"`
 	Dashboard *store.Dashboard `json:"dashboard"`
 	Live      *store.Live      `json:"live"`
@@ -260,6 +269,9 @@ func (s *Server) pulse(ctx context.Context) streamPulse {
 	out := streamPulse{
 		At:     time.Now().Unix(),
 		Window: streamWindow{Open: open, Spec: spec, NextAt: next},
+	}
+	if rev, err := s.st.MaxEventID(ctx); err == nil {
+		out.Rev = rev
 	}
 	if snap, err := s.st.Snapshot(ctx); err == nil {
 		out.Dashboard = &snap

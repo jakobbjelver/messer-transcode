@@ -82,6 +82,15 @@ func (s *Store) countInto(ctx context.Context, query string, into map[string]int
 	return rows.Err()
 }
 
+// MaxEventID is the newest event's id: a monotonic revision a client can compare
+// to decide whether a cached page is stale. It runs once per stream tick, so it
+// has to stay one indexed lookup (events.id is INTEGER PRIMARY KEY).
+func (s *Store) MaxEventID(ctx context.Context) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(id),0) FROM events`).Scan(&id)
+	return id, err
+}
+
 // EventRow is one line of the activity feed.
 type EventRow struct {
 	At      int64  `json:"at"`
