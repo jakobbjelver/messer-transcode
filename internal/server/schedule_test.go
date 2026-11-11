@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,7 +32,7 @@ func TestClaimsAllowed(t *testing.T) {
 		{"after close", at(6, 0), false, RefusedWindow},
 	}
 	for _, c := range cases {
-		ok, reason := s.claimsAllowed(c.when)
+		ok, reason := s.claimsAllowed(context.Background(), c.when)
 		if ok != c.ok || reason != c.reason {
 			t.Errorf("%s: allowed=%v reason=%q, want %v %q", c.name, ok, reason, c.ok, c.reason)
 		}

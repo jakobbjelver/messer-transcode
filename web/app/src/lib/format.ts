@@ -41,6 +41,18 @@ export function clock(unix: number): string {
   return new Date(unix * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
+/** "Mon 10 Nov 14:32" — a time with its day, for a list that spans weeks. */
+export function stamp(unix: number): string {
+  if (!unix) return "—";
+  return new Date(unix * 1000).toLocaleString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** "Mon 02 Jan" from an ISO timestamp. */
 export function day(iso: string): string {
   const d = new Date(iso);

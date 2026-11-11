@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jakobbjelver/messer-transcode/internal/health"
@@ -118,11 +119,32 @@ func (s *Server) apiFiles(w http.ResponseWriter, r *http.Request) {
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.st.Queue(r.Context(), q.Get("state"), q.Get("decision"), limit, offset)
+	// state_in is the "in flight" tab: three states, one filter. Comma-separated
+	// because a JSON body on a GET would be a worse convention than a list.
+	var states []string
+	for _, st := range strings.Split(q.Get("state_in"), ",") {
+		if st = strings.TrimSpace(st); st != "" {
+			states = append(states, st)
+		}
+	}
+	sort := q.Get("sort")
+	if sort != store.SortRecent && sort != store.SortSize {
+		sort = store.SortQueue
+	}
+	page, err := s.st.Queue(r.Context(), store.QueueFilter{
+		State:    q.Get("state"),
+		States:   states,
+		Decision: q.Get("decision"),
+		Query:    strings.TrimSpace(q.Get("q")),
+		Sort:     sort,
+		Limit:    limit,
+		Offset:   offset,
+	})
 	if err != nil {
 		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
 		return
 	}
+	rows := page.Rows
 	if rows == nil {
 		rows = []store.SummaryRow{}
 	}
@@ -131,6 +153,7 @@ func (s *Server) apiFiles(w http.ResponseWriter, r *http.Request) {
 		"limit":  limit,
 		"offset": offset,
 		"count":  len(rows),
+		"total":  page.Total,
 	})
 }
 
@@ -158,6 +181,16 @@ func (s *Server) apiFile(w http.ResponseWriter, r *http.Request) {
 		"audio_list":     f.AudioList(),
 		"sub_list":       f.SubList(),
 	})
+}
+
+// apiQueue is the tab strip's counts.
+func (s *Server) apiQueue(w http.ResponseWriter, r *http.Request) {
+	counts, err := s.st.QueueCounts(r.Context())
+	if err != nil {
+		s.fail(w, http.StatusInternalServerError, "E_STORE", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"counts": counts})
 }
 
 func (s *Server) apiEvents(w http.ResponseWriter, r *http.Request) {
@@ -331,7 +364,7 @@ func (s *Server) nodeClaim(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("requeued abandoned jobs", "count", n)
 	}
 
-	if ok, reason := s.claimsAllowed(time.Now()); !ok {
+	if ok, reason := s.claimsAllowed(r.Context(), time.Now()); !ok {
 		w.Header().Set("X-Claim-Status", reason)
 		w.WriteHeader(http.StatusNoContent)
 		return

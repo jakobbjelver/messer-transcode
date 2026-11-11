@@ -59,14 +59,14 @@ func newTestServer(t *testing.T) *Server {
 	if _, _, err := st.UpsertScanned(ctx, "movies", scanned); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := st.Queue(ctx, "", "", 10, 0)
+	page, err := st.Queue(ctx, store.QueueFilter{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("seeded %d rows, want 2", len(rows))
+	if len(page.Rows) != 2 {
+		t.Fatalf("seeded %d rows, want 2", len(page.Rows))
 	}
-	for _, r := range rows {
+	for _, r := range page.Rows {
 		// A probe is what makes a row real: dimensions pick the ladder tier and the
 		// audio/subtitle lists are what the detail screen shows. It must come before
 		// the decision, because probing resets the row's state.

@@ -151,7 +151,7 @@ func Collect(ctx context.Context, in In) Report {
 		rep.Queued = in.ServerReport.Queued
 	} else if in.Store != nil && in.Config != nil {
 		add(checkNodeSeen(ctx, in, now))
-		add(checkWindow(in))
+		add(checkWindow(ctx, in, now))
 		add(checkProgress(ctx, &rep, in, now))
 		rep.Queued = queued(ctx, in.Store)
 	}
@@ -397,13 +397,43 @@ func checkQuarantine(in In, now time.Time) Check {
 		Detail: fmt.Sprintf("%d dated directories, oldest %d days (keep %d)", files, age, keep)}
 }
 
-func checkWindow(in In) Check {
+func checkWindow(ctx context.Context, in In, now time.Time) Check {
 	if in.Config.Schedule.Timezone != "" {
 		if _, err := time.LoadLocation(in.Config.Schedule.Timezone); err != nil {
 			return Check{Name: "window", Status: Broken, Code: "E_TIMEZONE",
 				Detail: err.Error(), Fix: "use an IANA name such as Europe/Copenhagen"}
 		}
 	}
+
+	// Who is actually in charge right now? A pause or a forced window is not a
+	// fault, but doctor reporting the schedule while an operator holds the queue
+	// shut would be a lie — and a pause nobody remembers is how a night is lost.
+	if in.Store != nil {
+		if ctl, err := in.Store.Control(ctx); err == nil {
+			switch {
+			case ctl.Paused:
+				since := now.Sub(time.Unix(ctl.PausedAt, 0)).Round(time.Minute)
+				detail := fmt.Sprintf("the queue is paused, since %s", since)
+				code, status := "E_QUEUE_PAUSED", Degraded
+				if now.Sub(time.Unix(ctl.PausedAt, 0)) > 12*time.Hour {
+					code = "E_QUEUE_PAUSED_LONG"
+					detail = fmt.Sprintf("the queue has been paused for %s", since)
+				}
+				return Check{Name: "window", Status: status, Code: code, Detail: detail,
+					Fix: "resume it: Queue → Resume, or `messer-transcode queue resume`"}
+			case ctl.Override == store.OverrideOpen:
+				detail := "window forced open by hand"
+				if ctl.Until > 0 {
+					detail += " until " + time.Unix(ctl.Until, 0).Format("15:04")
+				}
+				return Check{Name: "window", Status: OK, Detail: detail}
+			case ctl.Override == store.OverrideClose:
+				return Check{Name: "window", Status: OK, Code: "E_WINDOW_FORCED_SHUT",
+					Detail: "window forced shut by hand; no new claims"}
+			}
+		}
+	}
+
 	return Check{Name: "window", Status: OK,
 		Detail: fmt.Sprintf("weekday %s, weekend %s, drain %dm",
 			in.Config.Schedule.Weekday, in.Config.Schedule.Weekend, in.Config.Schedule.DrainBeforeMinutes)}

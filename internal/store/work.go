@@ -33,7 +33,9 @@ func (s *Store) ClaimWork(ctx context.Context, limit int) ([]Work, error) {
 SELECT id, path, library, decision, COALESCE(target_kbps,0), size_bytes, COALESCE(duration_s,0)
 FROM files
 WHERE state = 'planned' AND decision IN ('encode','remux')
-ORDER BY id
+-- The operator's order beats the planner's: +100 is "next", -100 is "last".
+-- Within a priority, id keeps it first-in-first-out and explainable.
+ORDER BY priority DESC, id
 LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
