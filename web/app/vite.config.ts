@@ -17,6 +17,11 @@ export default defineConfig({
   },
   build: { outDir: "dist", emptyOutDir: true },
   server: {
+    // The dev server is reached through Caddy as transcode-dev.messer.wtf /
+    // transcode-dev.local, and Vite 6+ answers those with "Blocked request.
+    // This host is not allowed." until they are named here — a 403 that looks
+    // exactly like a broken app.
+    allowedHosts: [".messer.wtf", ".local"],
     proxy: {
       "/api": apiOrigin,
     },
