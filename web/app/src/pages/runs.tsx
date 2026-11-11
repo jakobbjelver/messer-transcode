@@ -1,3 +1,4 @@
+import { ArrowsClockwise } from "@phosphor-icons/react";
 import { Page } from "@/components/page";
 import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
@@ -40,7 +41,12 @@ export function RunsPage() {
             ? `One row per occurrence of the configured window · ${scheduleLabel(runs.data.schedule)}`
             : "Reading the schedule…"
         }
-        actions={<Button variant="outline" onClick={runs.reload}>Refresh</Button>}
+        actions={
+          <Button variant="outline" onClick={runs.reload}>
+            <ArrowsClockwise />
+            Refresh
+          </Button>
+        }
       />
 
       <Section eyebrow={`last ${LAST}`} aside={runs.data ? `${runs.data.runs.length} collected` : undefined}>

@@ -5,6 +5,6 @@
 
 @source "./**/*.{ts,tsx}";
 
-/* Canon ships font stacks, not files: the app owns the @font-face. */
-@import "@fontsource-variable/golos-text";
-@import "@fontsource-variable/jetbrains-mono";
+/* Canon ships font stacks, not files: the app owns the @font-face, and it must
+   register them under the family names type.css actually names. */
+@import "./styles/fonts.css";
