@@ -21,7 +21,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
     <AppShell
       variant="topbar"
       container="default"
-      brand={{ name: "Messer/Transcode", mark: <FilmSlate weight="fill" /> }}
+      brand={{ name: "Messer Transcode", mark: <FilmSlate weight="fill" /> }}
       nav={NAV}
       active={pathname}
       linkComponent={RouterLink}
