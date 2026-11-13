@@ -15,6 +15,10 @@ const STATES: Record<string, StatePresentation> = {
   replacing: { status: "neutral", label: "Replacing" },
   done: { status: "success", label: "Done" },
   skipped: { status: "neutral", label: "Left alone" },
+  // Not a failure: the file left the library (Sonarr upgraded it, or it was
+  // deleted) and the scan retired its row. Neutral, because a queue that cries
+  // wolf over a deleted file teaches you to ignore the one that matters.
+  gone: { status: "neutral", label: "Gone from disk" },
   failed: { status: "danger", label: "Failed" },
 };
 

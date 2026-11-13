@@ -24,6 +24,14 @@ type Dashboard struct {
 
 // Snapshot builds the dashboard figures. It is deliberately a handful of cheap
 // aggregates over an indexed table: the page polls it once a second.
+//
+// Two kinds of number live here and they answer different questions. The
+// catalogue — TotalFiles, TotalBytes, Decisions, Failures, ProjectedBytes — is
+// what is on the disk now, so a `gone` row is excluded: a file deleted from the
+// library is not part of the library, is not a live failure and is not work.
+// The ledger — ReclaimedBytes, DoneBytes — is what happened, so it counts every
+// row that finished, gone or not; a saving does not stop having happened because
+// the file was later deleted. States keeps `gone` visible so the page can say so.
 func (s *Store) Snapshot(ctx context.Context) (Dashboard, error) {
 	d := Dashboard{
 		States:    map[string]int{},
@@ -31,8 +39,8 @@ func (s *Store) Snapshot(ctx context.Context) (Dashboard, error) {
 	}
 
 	err := s.db.QueryRowContext(ctx, `
-SELECT COUNT(*),
-       COALESCE(SUM(size_bytes),0),
+SELECT COALESCE(SUM(CASE WHEN state <> 'gone' THEN 1 ELSE 0 END),0),
+       COALESCE(SUM(CASE WHEN state <> 'gone' THEN size_bytes ELSE 0 END),0),
        COALESCE(SUM(CASE WHEN finished_at IS NOT NULL
                          THEN MAX(COALESCE(bytes_before,0) - COALESCE(bytes_after,0), 0)
                          ELSE 0 END),0),
@@ -46,7 +54,7 @@ FROM files`).Scan(&d.TotalFiles, &d.TotalBytes, &d.ReclaimedBytes, &d.DoneBytes,
 	if err := s.countInto(ctx, `SELECT state, COUNT(*) FROM files GROUP BY 1`, d.States); err != nil {
 		return d, err
 	}
-	if err := s.countInto(ctx, `SELECT COALESCE(decision,'pending'), COUNT(*) FROM files GROUP BY 1`, d.Decisions); err != nil {
+	if err := s.countInto(ctx, `SELECT COALESCE(decision,'pending'), COUNT(*) FROM files WHERE state <> 'gone' GROUP BY 1`, d.Decisions); err != nil {
 		return d, err
 	}
 
@@ -275,6 +283,7 @@ type QueueSummary struct {
 	Failed     int `json:"failed"`
 	Done       int `json:"done"`
 	Skipped    int `json:"skipped"`
+	Gone       int `json:"gone"`
 	Everything int `json:"everything"`
 }
 
@@ -290,8 +299,9 @@ SELECT
   COALESCE(SUM(CASE WHEN state='failed' THEN 1 ELSE 0 END),0),
   COALESCE(SUM(CASE WHEN state='done' THEN 1 ELSE 0 END),0),
   COALESCE(SUM(CASE WHEN state='skipped' THEN 1 ELSE 0 END),0),
+  COALESCE(SUM(CASE WHEN state='gone' THEN 1 ELSE 0 END),0),
   COUNT(*)
-FROM files`).Scan(&q.Queued, &q.Encode, &q.Remux, &q.InFlight, &q.Failed, &q.Done, &q.Skipped, &q.Everything)
+FROM files`).Scan(&q.Queued, &q.Encode, &q.Remux, &q.InFlight, &q.Failed, &q.Done, &q.Skipped, &q.Gone, &q.Everything)
 	return q, err
 }
 

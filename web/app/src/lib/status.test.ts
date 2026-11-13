@@ -7,6 +7,8 @@ describe("statePresentation", () => {
   it("maps failed to danger", () => expect(statePresentation("failed").status).toBe("danger"));
   it("reads skipped in the human voice", () =>
     expect(statePresentation("skipped")).toEqual({ status: "neutral", label: "Left alone" }));
+  it("does not dress a retired file up as a failure", () =>
+    expect(statePresentation("gone")).toEqual({ status: "neutral", label: "Gone from disk" }));
   it("keeps the three in-flight stages neutral with their own label", () => {
     for (const [stage, label] of [
       ["encoding", "Encoding"],

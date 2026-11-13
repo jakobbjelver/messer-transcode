@@ -376,5 +376,6 @@ export type QueueSummary = {
   failed: number;
   done: number;
   skipped: number;
+  gone: number;
   everything: number;
 };
