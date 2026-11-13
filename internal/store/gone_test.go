@@ -302,6 +302,71 @@ func TestGoneRowsAreNeitherProbedNorDecided(t *testing.T) {
 	}
 }
 
+// A retirement must not rewrite a night that already happened. The run ledger
+// counts what a file did in a run, so a row retired afterwards still answers
+// with the failure or the skip it recorded — otherwise a Sonarr upgrade would
+// silently improve last night's numbers.
+func TestRetiringARowKeepsItsRunHistory(t *testing.T) {
+	ctx := context.Background()
+	s := tempStore(t)
+	ts := newStamps()
+
+	if _, _, err := s.UpsertScannedAt(ctx, "movies", []media.Scanned{
+		{Path: "/lib/failed.mkv", Size: 10, MtimeNS: 1},
+		{Path: "/lib/skipped.mkv", Size: 20, MtimeNS: 2},
+	}, ts.seed); err != nil {
+		t.Fatal(err)
+	}
+	failedID := idOf(t, s, "/lib/failed.mkv")
+	skippedID := idOf(t, s, "/lib/skipped.mkv")
+	for _, id := range []int64{failedID, skippedID} {
+		if err := s.SetDecision(ctx, id, Decision{
+			Decision: "encode", Code: "R_H264_ENCODE", Reason: "test", KeyKbps: 3000, State: "planned",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const runID = int64(1794526200)
+	if _, err := s.EnsureRun(ctx, RunRow{
+		ID: runID, StartAt: runID, EndAt: runID + 18000, Spec: "test", Kind: "weekday",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimWork(ctx, 2, runID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Fail(ctx, failedID, "E_SOURCE_MISSING", "no such file", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Skip(ctx, skippedID, "R_QUALITY_FLOOR", "cannot reach the target"); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := s.RunAggregates(ctx, []int64{runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before[runID].FailedCodes["E_SOURCE_MISSING"] != 1 || before[runID].SkipCodes["R_QUALITY_FLOOR"] != 1 {
+		t.Fatalf("ledger before the prune = %+v, want one failure and one skip", before[runID])
+	}
+
+	// The files are deleted afterwards, and the next scan retires them.
+	if _, err := s.MarkGone(ctx, "movies", ts.later); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.RunAggregates(ctx, []int64{runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after[runID].FailedCodes["E_SOURCE_MISSING"] != 1 {
+		t.Errorf("the run lost its failure: %+v", after[runID].FailedCodes)
+	}
+	if after[runID].SkipCodes["R_QUALITY_FLOOR"] != 1 {
+		t.Errorf("the run lost its skip: %+v", after[runID].SkipCodes)
+	}
+}
+
 func stateOf(t *testing.T, s *Store, path string) string {
 	t.Helper()
 	var state string

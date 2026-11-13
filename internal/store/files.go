@@ -50,6 +50,12 @@ ON CONFLICT(path) DO UPDATE SET
                      OR files.size_bytes <> excluded.size_bytes
                      OR files.mtime_ns   <> excluded.mtime_ns
                     THEN 'new' ELSE files.state END,
+  -- A revived file has no retirement behind it any more, so the run ledger must
+  -- read its live state again rather than the one the retirement preserved.
+  retired_from = CASE WHEN files.state = 'gone'
+                     OR files.size_bytes <> excluded.size_bytes
+                     OR files.mtime_ns   <> excluded.mtime_ns
+                    THEN NULL ELSE files.retired_from END,
   updated_at = excluded.updated_at`
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -101,15 +107,16 @@ ON CONFLICT(path) DO UPDATE SET
 // Sonarr upgrading an episode, a manual prune — kept its row, so the dashboard
 // counted bytes that were not on the disk and the queue spent a claim on a path
 // that could only fail with E_SOURCE_MISSING. Nothing is deleted here: a gone
-// row keeps its finish, its sizes and its last error, because history is a fact,
-// and a file that comes back revives through UpsertScanned.
+// row keeps its finish, its sizes and its last error, and it keeps the state the
+// retirement replaced in retired_from, because the run ledger counts what a file
+// did on a night and this must not rewrite a night that already happened.
 //
 // Rows mid-job are never touched. The encoder holds a file under a temporary
 // name while it works, so a walk can legitimately miss one that is being encoded
 // right now, and the encoder is the one that is right.
 func (s *Store) MarkGone(ctx context.Context, library string, seenAt int64) (int, error) {
 	res, err := s.db.ExecContext(ctx, `
-UPDATE files SET state = 'gone'
+UPDATE files SET state = 'gone', retired_from = state
 WHERE library = ? AND updated_at < ?
   AND state NOT IN ('encoding','verifying','replacing','gone')`, library, seenAt)
 	if err != nil {
