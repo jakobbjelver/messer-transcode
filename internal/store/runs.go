@@ -220,7 +220,7 @@ GROUP BY run_id`, args...)
 	} {
 		rows, err := s.db.QueryContext(ctx, `
 SELECT run_id, `+q.col+`, COUNT(*) FROM files
-WHERE run_id IN (`+ph+`) AND state = ?
+WHERE run_id IN (`+ph+`) AND COALESCE(NULLIF(retired_from,''), state) = ?
 GROUP BY run_id, 2`, append(append([]any{}, args...), q.state)...)
 		if err != nil {
 			return nil, err
