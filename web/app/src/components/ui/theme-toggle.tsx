@@ -9,6 +9,10 @@ import { Moon, Sun } from "@phosphor-icons/react";
  * The icon swap is attribute-driven (`data-dark`), not a `dark:` variant: apps differ in whether they
  * declare `@custom-variant dark`, and a control that silently loses its icon in one app is worse than
  * no animation at all.
+ *
+ * The glyph is 16 px (`size-4`), the same glyph the generated fronts' 32 px `.pg-icon-btn` draws. The
+ * block used 1.2rem (19.2 px) until 2026-11-13, which made the toggle read a size heavier in every
+ * React app than on ui.messer.wtf / projects.messer.wtf; the smaller glyph is the family size.
  */
 export function ThemeToggle({
   dark,
@@ -34,11 +38,11 @@ export function ThemeToggle({
     >
       <Sun
         aria-hidden="true"
-        className="size-[1.2rem] scale-100 rotate-0 transition-transform duration-150 group-data-[dark]/theme:scale-0 group-data-[dark]/theme:-rotate-90"
+        className="size-4 scale-100 rotate-0 transition-transform duration-150 group-data-[dark]/theme:scale-0 group-data-[dark]/theme:-rotate-90"
       />
       <Moon
         aria-hidden="true"
-        className="absolute size-[1.2rem] scale-0 rotate-90 transition-transform duration-150 group-data-[dark]/theme:scale-100 group-data-[dark]/theme:rotate-0"
+        className="absolute size-4 scale-0 rotate-90 transition-transform duration-150 group-data-[dark]/theme:scale-100 group-data-[dark]/theme:rotate-0"
       />
     </button>
   );
