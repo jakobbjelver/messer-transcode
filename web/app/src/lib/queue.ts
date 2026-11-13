@@ -19,6 +19,7 @@ export type QueueTabKey =
   | "failed"
   | "done"
   | "skipped"
+  | "gone"
   | "everything";
 
 export type QueueTab = {
@@ -41,6 +42,9 @@ export const TABS: QueueTab[] = [
   { key: "failed", label: "Failed", count: (c) => c.failed, query: { state: "failed" } },
   { key: "done", label: "Done", count: (c) => c.done, query: { state: "done", sort: "recent" } },
   { key: "skipped", label: "Skipped", count: (c) => c.skipped, query: { state: "skipped" } },
+  // Retired, not broken: the scan did not find these files. Its own tab because
+  // "why is the library 10 TB when the disk says 7" has to have an answer.
+  { key: "gone", label: "Gone", count: (c) => c.gone, query: { state: "gone" } },
   { key: "everything", label: "All", count: (c) => c.everything, query: {} },
 ];
 
@@ -81,6 +85,7 @@ export function columnsFor(tab: QueueTabKey): Column[] {
     case "done":
       return ["file", "state", "finished", "saved", "vmaf", "size"];
     case "skipped":
+    case "gone":
       return ["file", "state", "why", "size"];
     case "inflight":
     case "failed":

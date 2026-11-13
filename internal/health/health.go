@@ -240,7 +240,7 @@ func checkDatabase(ctx context.Context, in In) Check {
 	}
 
 	var files int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM files").Scan(&files); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM files WHERE state <> 'gone'").Scan(&files); err != nil {
 		return Check{Name: "database", Status: Broken, Code: "E_DB_SCHEMA", Detail: err.Error(),
 			Fix: "the schema is older or newer than this binary"}
 	}

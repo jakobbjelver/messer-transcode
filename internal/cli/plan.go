@@ -91,8 +91,12 @@ func printPlan(w io.Writer, cfgPath, db string, r *plan.Report) {
 		say(w, "                %s: %d files (%d skipped, %d excluded)\n",
 			l.Name, l.Files, l.Skipped, l.Filtered)
 	}
-	say(w, "[02] probed     %d of %d needed (%d errors)\n", r.Probed, r.NeedingProbe, r.ProbeErrors)
-	say(w, "[03] decided    %d\n\n", r.Decided)
+	say(w, "[02] retired    %d gone (no longer on disk, kept for history)\n", r.Gone)
+	for _, warning := range r.Warnings {
+		say(w, "                warning: %s\n", warning)
+	}
+	say(w, "[03] probed     %d of %d needed (%d errors)\n", r.Probed, r.NeedingProbe, r.ProbeErrors)
+	say(w, "[04] decided    %d\n\n", r.Decided)
 
 	say(w, "%-10s %-22s %6s %12s %12s %12s\n",
 		"DECISION", "REASON", "FILES", "SIZE", "PROJECTED", "SAVE")

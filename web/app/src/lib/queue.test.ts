@@ -10,6 +10,7 @@ const counts = {
   failed: 7,
   done: 3136,
   skipped: 402,
+  gone: 1465,
   everything: 4293,
 };
 
@@ -18,7 +19,12 @@ describe("tabs", () => {
     const byKey = Object.fromEntries(TABS.map((t) => [t.key, t.count(counts)]));
     expect(byKey.queued).toBe(747);
     expect(byKey.done).toBe(3136);
+    expect(byKey.gone).toBe(1465);
     expect(byKey.everything).toBe(4293);
+  });
+
+  it("gives retired files their own filter rather than burying them in All", () => {
+    expect(tabByKey("gone").query).toEqual({ state: "gone" });
   });
 
   it("falls back to Queued for an unknown or missing tab", () => {

@@ -23,6 +23,18 @@ func ProbeKey(size, mtimeNS int64) string {
 // Inserted counts new rows; Changed counts rows whose size or mtime moved,
 // which resets them to "new" so they are re-probed rather than trusted.
 func (s *Store) UpsertScanned(ctx context.Context, library string, files []media.Scanned) (inserted, changed int, err error) {
+	return s.UpsertScannedAt(ctx, library, files, time.Now().Unix())
+}
+
+// UpsertScannedAt is UpsertScanned with the scan's stamp given by the caller, so
+// MarkGone can tell "not in this walk" from "not in any walk" without a race
+// against the clock. Every file in the set is stamped `at`; a row whose
+// updated_at is older than `at` was not seen by this scan.
+//
+// A row that comes back from "gone" is reset to "new" with no probe key: the
+// facts the planner held described a file that had left the disk, and the file
+// that returned has to be measured again.
+func (s *Store) UpsertScannedAt(ctx context.Context, library string, files []media.Scanned, at int64) (inserted, changed int, err error) {
 	const q = `
 INSERT INTO files (path, library, size_bytes, mtime_ns, probe_key, state, attempts, updated_at)
 VALUES (?, ?, ?, ?, NULL, 'new', 0, ?)
@@ -30,10 +42,12 @@ ON CONFLICT(path) DO UPDATE SET
   library    = excluded.library,
   size_bytes = excluded.size_bytes,
   mtime_ns   = excluded.mtime_ns,
-  probe_key  = CASE WHEN files.size_bytes <> excluded.size_bytes
+  probe_key  = CASE WHEN files.state = 'gone'
+                     OR files.size_bytes <> excluded.size_bytes
                      OR files.mtime_ns   <> excluded.mtime_ns
                     THEN NULL ELSE files.probe_key END,
-  state      = CASE WHEN files.size_bytes <> excluded.size_bytes
+  state      = CASE WHEN files.state = 'gone'
+                     OR files.size_bytes <> excluded.size_bytes
                      OR files.mtime_ns   <> excluded.mtime_ns
                     THEN 'new' ELSE files.state END,
   updated_at = excluded.updated_at`
@@ -50,7 +64,6 @@ ON CONFLICT(path) DO UPDATE SET
 	}
 	defer func() { _ = stmt.Close() }()
 
-	now := time.Now().Unix()
 	for _, f := range files {
 		// SQLite reports an insert and an update as one affected row, so the
 		// counters have to come from the row that was there before. One indexed
@@ -67,7 +80,7 @@ ON CONFLICT(path) DO UPDATE SET
 			return inserted, changed, fmt.Errorf("lookup %s: %w", f.Path, err)
 		}
 
-		if _, err := stmt.ExecContext(ctx, f.Path, library, f.Size, f.MtimeNS, now); err != nil {
+		if _, err := stmt.ExecContext(ctx, f.Path, library, f.Size, f.MtimeNS, at); err != nil {
 			return inserted, changed, fmt.Errorf("upsert %s: %w", f.Path, err)
 		}
 		if !exists {
@@ -82,6 +95,30 @@ ON CONFLICT(path) DO UPDATE SET
 	return inserted, changed, nil
 }
 
+// MarkGone retires the rows a scan did not see.
+//
+// It is the tombstone the catalogue did not have. A file deleted between scans —
+// Sonarr upgrading an episode, a manual prune — kept its row, so the dashboard
+// counted bytes that were not on the disk and the queue spent a claim on a path
+// that could only fail with E_SOURCE_MISSING. Nothing is deleted here: a gone
+// row keeps its finish, its sizes and its last error, because history is a fact,
+// and a file that comes back revives through UpsertScanned.
+//
+// Rows mid-job are never touched. The encoder holds a file under a temporary
+// name while it works, so a walk can legitimately miss one that is being encoded
+// right now, and the encoder is the one that is right.
+func (s *Store) MarkGone(ctx context.Context, library string, seenAt int64) (int, error) {
+	res, err := s.db.ExecContext(ctx, `
+UPDATE files SET state = 'gone'
+WHERE library = ? AND updated_at < ?
+  AND state NOT IN ('encoding','verifying','replacing','gone')`, library, seenAt)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
 // Pending is a file awaiting a probe or a decision.
 type Pending struct {
 	ID    int64
@@ -90,10 +127,12 @@ type Pending struct {
 	Mtime int64
 }
 
-// FilesNeedingProbe returns rows with no valid probe.
+// FilesNeedingProbe returns rows with no valid probe. A gone row is not work:
+// the file is not there to measure.
 func (s *Store) FilesNeedingProbe(ctx context.Context) ([]Pending, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, path, size_bytes, mtime_ns FROM files WHERE probe_key IS NULL ORDER BY id`)
+		`SELECT id, path, size_bytes, mtime_ns FROM files
+		 WHERE probe_key IS NULL AND state <> 'gone' ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -196,13 +235,15 @@ type Undecided struct {
 	AudioTracks string
 }
 
-// FilesNeedingDecision returns probed files without a verdict.
+// FilesNeedingDecision returns probed files without a verdict. A gone row keeps
+// whatever verdict it had; deciding it again would put a deleted file back in
+// the queue.
 func (s *Store) FilesNeedingDecision(ctx context.Context) ([]Undecided, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, path, size_bytes, COALESCE(width,0), COALESCE(height,0), COALESCE(video_codec,''), COALESCE(bitrate_kbps,0),
        COALESCE(audio_tracks,'[]')
 FROM files
-WHERE probe_key IS NOT NULL AND (decision IS NULL OR decision = '')
+WHERE probe_key IS NOT NULL AND (decision IS NULL OR decision = '') AND state <> 'gone'
 ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -229,7 +270,8 @@ type Bucket struct {
 	EstimateOut int64  `json:"estimate_out_bytes"`
 }
 
-// Summary groups the decided set by decision and reason.
+// Summary groups the decided set by decision and reason. Gone rows are not part
+// of the catalogue any more, so they are not part of its arithmetic either.
 func (s *Store) Summary(ctx context.Context) ([]Bucket, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT COALESCE(decision,'none'), COALESCE(reason_code,''), COUNT(*), COALESCE(SUM(size_bytes),0),
@@ -237,6 +279,7 @@ SELECT COALESCE(decision,'none'), COALESCE(reason_code,''), COUNT(*), COALESCE(S
                          THEN target_kbps * 1000.0 / 8 * duration_s
                          ELSE size_bytes END), 0) AS INTEGER)
 FROM files
+WHERE state <> 'gone'
 GROUP BY 1, 2
 ORDER BY 4 DESC`)
 	if err != nil {
@@ -294,7 +337,7 @@ func (s *Store) DecidedFiles(ctx context.Context) ([]FileRow, error) {
 SELECT path, size_bytes, COALESCE(video_codec,''), COALESCE(height,0), COALESCE(bitrate_kbps,0),
        COALESCE(decision,''), COALESCE(reason_code,''), COALESCE(reason,''), COALESCE(target_kbps,0)
 FROM files
-WHERE decision IS NOT NULL AND decision <> ''
+WHERE decision IS NOT NULL AND decision <> '' AND state <> 'gone'
 ORDER BY path`)
 	if err != nil {
 		return nil, err

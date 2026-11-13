@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -47,6 +48,8 @@ type Report struct {
 	Probed       int            `json:"probed"`
 	ProbeErrors  int            `json:"probe_errors"`
 	Decided      int            `json:"decided"`
+	Gone         int            `json:"gone"`
+	Warnings     []string       `json:"warnings,omitempty"`
 	Buckets      []store.Bucket `json:"buckets"`
 	States       map[string]int `json:"states"`
 	TotalBytes   int64          `json:"total_bytes"`
@@ -74,13 +77,18 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	started := time.Now()
 	rep := &Report{}
 
-	// 1. Scan.
+	// 1. Scan, then retire whatever the walk did not find.
+	//
+	// The stamp is taken before the walk and every file in the set carries it,
+	// so "not seen" is a comparison between two numbers instead of a second
+	// clock read that can race the scan.
 	for _, lib := range opts.Config.Libraries {
+		stamp := time.Now().Unix()
 		res, err := node.Scan(lib)
 		if err != nil {
 			return nil, fmt.Errorf("scan %s: %w", lib.Name, err)
 		}
-		if _, _, err := opts.Store.UpsertScanned(ctx, lib.Name, res.Files); err != nil {
+		if _, _, err := opts.Store.UpsertScannedAt(ctx, lib.Name, res.Files, stamp); err != nil {
 			return nil, fmt.Errorf("record %s: %w", lib.Name, err)
 		}
 		rep.Scanned += len(res.Files)
@@ -90,6 +98,20 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			Skipped:  res.Skipped,
 			Filtered: res.Filtered,
 		})
+
+		// An unmounted volume walks as an empty library, and a prune taken from
+		// that silence would retire the whole catalogue. The root has to exist
+		// for the walk's answer to mean anything.
+		if !rootExists(lib.Root) {
+			rep.Warnings = append(rep.Warnings, fmt.Sprintf(
+				"%s: root %s is not a directory — nothing retired from it", lib.Name, lib.Root))
+			continue
+		}
+		gone, err := opts.Store.MarkGone(ctx, lib.Name, stamp)
+		if err != nil {
+			return nil, fmt.Errorf("retire %s: %w", lib.Name, err)
+		}
+		rep.Gone += gone
 	}
 
 	// 2. Probe.
@@ -147,6 +169,13 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	}
 	rep.Elapsed = time.Since(started).Round(time.Second).String()
 	return rep, nil
+}
+
+// rootExists is the guard that makes a prune safe: an unmounted volume and an
+// empty library look identical to a walk, and only one of them may retire rows.
+func rootExists(root string) bool {
+	info, err := os.Stat(root)
+	return err == nil && info.IsDir()
 }
 
 func plannerFacts(u store.Undecided) media.Facts {
