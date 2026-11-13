@@ -162,7 +162,8 @@ export function AppShell({
   const topbar = (
     <header
       className={[
-        "h-12 shrink-0 border-b border-border bg-[var(--surface)]",
+        // sticky, like the generated fronts' .pg-bar: the bar stays while the page scrolls under it.
+        "sticky top-0 z-30 h-12 shrink-0 border-b border-border bg-[var(--surface)]",
         variant === "sidebar" ? "md:hidden" : "",
       ].join(" ")}
     >
