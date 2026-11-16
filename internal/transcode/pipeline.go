@@ -86,6 +86,61 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	return res, nil
 }
 
+// escalateWithin is how far under the quality floor a first attempt may land
+// and still deserve the 1.4x rung. Measured: 89.9 at 6000 kbps and 89.9 at 8400
+// on grain, while a file one or two tenths short recovers at the higher rung.
+const escalateWithin = 1.5
+
+// shouldEscalate reports whether a quality miss is close enough for a bigger
+// encode to plausibly fix. A pass is not an escalation, and a tier with no
+// expectation has nothing to escalate against.
+func shouldEscalate(vmaf, floor float64) bool {
+	if floor <= 0 || vmaf <= 0 {
+		return false
+	}
+	miss := floor - vmaf
+	return miss > 0 && miss <= escalateWithin
+}
+
+const (
+	// minRatioFloor is the absolute truncation guard: an output smaller than a
+	// sixth of its source is not a good saving, it is a broken encode.
+	minRatioFloor = 0.15
+	// projectionSlack is how far below the ladder's projection an output may
+	// land before the band calls it truncated. The encoder undershoots -b:v
+	// routinely, so the floor is a fraction of the projection, not the
+	// projection itself.
+	projectionSlack = 0.7
+)
+
+// ratioBand bounds the output/source size ratio for one attempt.
+//
+// It only ever lowers the floor, and only as far as the attempt's own
+// projection justifies. The configured band is written for the common case
+// where the target is most of the source bitrate; a 2,700 kbps rung against a
+// 12 Mbps source projects 0.22, so a fixed 0.35 floor rejects the encode that
+// returns the biggest saving in the library — after a full encode, once per
+// attempt. The max is never raised: an output larger than its source is a
+// failed encode however it was targeted.
+func ratioBand(cfg *config.Config, decision string, targetKbps, sourceKbps int) RatioBand {
+	if decision == "remux" {
+		// A remux should be roughly the same size; the encode bands would
+		// reject it for not shrinking.
+		return RatioBand{Min: 0.80, Max: 1.15}
+	}
+	band := RatioBand{Min: cfg.Safety.SizeRatioMin, Max: cfg.Safety.SizeRatioMax}
+	if targetKbps > 0 && sourceKbps > 0 {
+		floor := projectionSlack * float64(targetKbps) / float64(sourceKbps)
+		if floor < band.Min {
+			if floor < minRatioFloor {
+				floor = minRatioFloor
+			}
+			band.Min = floor
+		}
+	}
+	return band
+}
+
 // Split runs everything except the final swap and hands the swap back as a
 // function.
 //
@@ -175,19 +230,22 @@ func Split(ctx context.Context, opts Options, t Task) (Result, func(context.Cont
 		}
 	}()
 
-	band := RatioBand{Min: cfg.Safety.SizeRatioMin, Max: cfg.Safety.SizeRatioMax}
-	if t.Decision == "remux" {
-		// A remux should be roughly the same size; the encode bands would
-		// reject it for not shrinking.
-		band = RatioBand{Min: 0.80, Max: 1.15}
-	}
-
-	// One encode at the ladder rung, plus one escalation if the result misses
-	// the quality floor. Grain-heavy film is the usual cause; spending another
-	// 40 % of bits beats parking a file that is otherwise fine.
+	// One encode at the ladder rung, plus one escalation when the result
+	// *nearly* meets the quality floor. Grain-heavy film is the usual miss, and
+	// on grain the curve is flat — a 40 % higher rung buys nothing — so the
+	// escalation is only worth its encode when the shortfall is small enough
+	// for more bits to plausibly close it.
 	targets := []int{t.TargetKbps}
 	if t.Decision == "encode" && t.TargetKbps > 0 {
 		targets = append(targets, t.TargetKbps*14/10)
+	}
+
+	// The floor travels with the tier: a rung with no measurement behind it
+	// cannot be held to a number, and then nothing is escalated.
+	expectedVMAF := planner.ExpectedVMAF(cfg, probe.VideoCodec, planner.NominalHeight(probe.Width, probe.Height))
+	qualityFloor := 0.0
+	if expectedVMAF > 0 {
+		qualityFloor = expectedVMAF - cfg.Quality.VMAFTolerance
 	}
 
 	var verdict Verdict
@@ -284,11 +342,11 @@ func Split(ctx context.Context, opts Options, t Task) (Result, func(context.Cont
 			DurationS: probe.DurationS,
 			SizeBytes: before,
 		}, out, VerifyRules{
-			Band:               band,
+			Band:               ratioBand(cfg, t.Decision, kbps, probe.BitrateKbps),
 			DurationToleranceS: float64(cfg.Safety.DurationTolSec),
 			SampleSeconds:      cfg.Safety.VerifySampleSec,
 			VerifyVMAF:         cfg.Safety.VerifyVMAF && t.Decision == "encode",
-			ExpectedVMAF:       planner.ExpectedVMAF(cfg, probe.VideoCodec, planner.NominalHeight(probe.Width, probe.Height)),
+			ExpectedVMAF:       expectedVMAF,
 			VMAFTolerance:      cfg.Quality.VMAFTolerance,
 			RefPath:            t.Path,
 		})
@@ -304,13 +362,19 @@ func Split(ctx context.Context, opts Options, t Task) (Result, func(context.Cont
 			res.Verdict = verdict
 			return res, nil, abort(opts, t, verdict.Code, verdict.Detail)
 		}
-		if attempt == len(targets)-1 {
-			// Even the escalated bitrate missed. That is a property of the
-			// content (grain does not survive a re-encode), not a fault: leave
-			// the file exactly as it is and say why.
+		// Park when the escalated rung already ran, or when the miss is too
+		// wide for more bits to close. That is a property of the content (grain
+		// does not survive a re-encode), not a fault: leave the file exactly as
+		// it is and say why.
+		if attempt == len(targets)-1 || !shouldEscalate(verdict.VMAF, qualityFloor) {
 			res.Verdict = verdict
-			reason := fmt.Sprintf("best attempt scored %s at %d kbps: not worth re-encoding",
-				verdictDetail(verdict), kbps)
+			why := "not worth re-encoding"
+			if attempt < len(targets)-1 {
+				why = fmt.Sprintf("%.1f below the %.1f floor: a higher rung cannot buy it",
+					qualityFloor-verdict.VMAF, qualityFloor)
+			}
+			reason := fmt.Sprintf("best attempt scored %s at %d kbps: %s",
+				verdictDetail(verdict), kbps, why)
 			emit("skip", "R_QUALITY_FLOOR", reason)
 			_ = opts.Reporter.Event(ctx, "info", "R_QUALITY_FLOOR", t.ID, reason, "")
 			return res, nil, opts.Reporter.Skip(ctx, t.ID, "R_QUALITY_FLOOR", reason)
