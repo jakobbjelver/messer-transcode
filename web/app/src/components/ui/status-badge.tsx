@@ -1,4 +1,4 @@
-import { Check, Circle, Warning, X } from "@phosphor-icons/react/dist/ssr";
+import { Check, Circle, Hourglass, Warning, X } from "@phosphor-icons/react/dist/ssr";
 import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,8 @@ const STATUS = {
   warning: { Icon: Warning, tone: "text-warning" },
   danger: { Icon: X, tone: "text-destructive" },
   neutral: { Icon: Circle, tone: "text-foreground" },
+  // A suspended-but-not-failed state: a stack paused by hand, a job parked.
+  paused: { Icon: Hourglass, tone: "text-foreground" },
 } as const satisfies Record<string, { Icon: PhosphorIcon; tone: string }>;
 
 export type Status = keyof typeof STATUS;
