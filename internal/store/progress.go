@@ -6,10 +6,16 @@ import (
 )
 
 // SetProgress records how far the current encode has got. Called from the
-// encoder's progress callback, so it must stay cheap: one row, one column.
+// encoder's progress callback, so it must stay cheap: one row, three columns.
+//
+// It also renews the lease. The node reports progress every two seconds and the
+// prefetcher heartbeats a staged file every thirty, so a row with a fresh
+// progress value is by definition a row whose node is alive. Without this the
+// lease meant "five minutes since the claim" and a long encode was reaped and
+// handed out again while it was still running.
 func (s *Store) SetProgress(ctx context.Context, id int64, fraction, speed float64) error {
-	return s.exec(ctx, `UPDATE files SET progress = ?, speed = ? WHERE id = ?`,
-		fraction, speed, id)
+	return s.exec(ctx, `UPDATE files SET progress = ?, speed = ?, lease_at = ? WHERE id = ?`,
+		fraction, speed, time.Now().Unix(), id)
 }
 
 // Live is the job currently holding the machine, if any.
