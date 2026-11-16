@@ -73,8 +73,14 @@ export type Run = {
   encoded: number;
   bytes_before: number;
   bytes_after: number;
+  /** Time that bought a file. */
   busy_seconds: number;
   busy_percent: number;
+  /** Time spent on files that then failed or parked. */
+  wasted_seconds: number;
+  wasted_percent: number;
+  /** Busy + wasted: the share of the window the encoder held a file at all. */
+  occupied_percent: number;
   vmaf_mean?: number;
   vmaf_min?: number;
   vmaf_n?: number;

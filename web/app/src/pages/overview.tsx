@@ -174,7 +174,7 @@ export function OverviewPage() {
                 <TableHead className="m-label text-right">Done</TableHead>
                 <TableHead className="m-label text-right">Back</TableHead>
                 <TableHead className="m-label hidden text-right md:table-cell">VMAF</TableHead>
-                <TableHead className="m-label hidden text-right md:table-cell">Busy</TableHead>
+                <TableHead className="m-label hidden text-right md:table-cell">Occupied</TableHead>
                 <TableHead className="m-label text-right">Failed</TableHead>
               </TableRow>
             </TableHeader>
@@ -265,7 +265,7 @@ function RunRow({ run }: { run: Run }) {
       <TableCell className="m-data hidden text-right md:table-cell">
         {run.vmaf_n ? run.vmaf_mean?.toFixed(1) : "—"}
       </TableCell>
-      <TableCell className="m-data hidden text-right md:table-cell">{pct(run.busy_percent)}</TableCell>
+      <TableCell className="m-data hidden text-right md:table-cell">{pct(run.occupied_percent)}</TableCell>
       <TableCell className="m-data text-right">
         {run.failed ? (
           <span className="text-destructive">{run.failed}</span>

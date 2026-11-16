@@ -161,3 +161,43 @@ func TestUtilisation(t *testing.T) {
 		t.Errorf("utilisation = %.1f, want 60", got)
 	}
 }
+
+// A run's busy figure is what it bought. Time spent on files that then failed
+// or parked is a different number, and the two together are the encoder's
+// occupancy — the only figure that says whether the window was used.
+func TestWastedAndOccupiedTime(t *testing.T) {
+	loc := cp()
+	start := time.Date(2026, 11, 4, 0, 30, 0, 0, loc)
+	end := start.Add(5 * time.Hour)
+	r := Run{
+		Window:        Window{Start: start, End: end},
+		BusySeconds:   2 * 3600,
+		WastedSeconds: 3600,
+	}
+
+	if got := r.Utilisation(end); got != 40 {
+		t.Errorf("utilisation = %.1f, want 40", got)
+	}
+	if got := r.Wasted(end); got != 20 {
+		t.Errorf("wasted = %.1f, want 20", got)
+	}
+	if got := r.Occupied(end); got != 60 {
+		t.Errorf("occupied = %.1f, want 60", got)
+	}
+}
+
+// Occupancy is clamped like utilisation: overlapping lanes can make the file
+// time add up to more than the window, and a number above 100 reads as a bug.
+func TestOccupiedIsClamped(t *testing.T) {
+	loc := cp()
+	start := time.Date(2026, 11, 4, 0, 30, 0, 0, loc)
+	end := start.Add(time.Hour)
+	r := Run{
+		Window:        Window{Start: start, End: end},
+		BusySeconds:   3000,
+		WastedSeconds: 2000,
+	}
+	if got := r.Occupied(end); got != 100 {
+		t.Errorf("occupied = %.1f, want 100", got)
+	}
+}
