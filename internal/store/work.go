@@ -66,8 +66,8 @@ LIMIT ?`, limit)
 			run = runID
 		}
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE files SET state='encoding', started_at=?, updated_at=?, run_id=? WHERE id=?`,
-			now, now, run, w.ID); err != nil {
+			`UPDATE files SET state='encoding', started_at=?, updated_at=?, lease_at=?, run_id=? WHERE id=?`,
+			now, now, now, run, w.ID); err != nil {
 			return nil, err
 		}
 	}
@@ -79,8 +79,12 @@ LIMIT ?`, limit)
 
 // SetState moves one file to a new lifecycle state.
 func (s *Store) SetState(ctx context.Context, id int64, state string) error {
+	now := time.Now().Unix()
+	// A state change is a heartbeat too: the node moves a job to verifying or
+	// replacing and then spends a while copying, and reaping it in that window
+	// would hand out work that is already placed.
 	return s.exec(ctx,
-		`UPDATE files SET state=?, updated_at=? WHERE id=?`, state, time.Now().Unix(), id)
+		`UPDATE files SET state=?, updated_at=?, lease_at=? WHERE id=?`, state, now, now, id)
 }
 
 // Finish records a successful replacement.
@@ -125,6 +129,18 @@ WHERE id=?`,
 		now, id)
 }
 
+// parksImmediately reports whether a failure is structural rather than
+// transient. These are the two checks that measure the output against the
+// source: a bad size ratio or a wrong duration is a property of the encode, not
+// of the moment it ran.
+func parksImmediately(code string) bool {
+	switch code {
+	case "E_VERIFY_SIZE_RATIO", "E_VERIFY_DURATION":
+		return true
+	}
+	return false
+}
+
 // Fail records an attempt. A file returns to "planned" until it runs out of
 // attempts, which keeps a transient error from parking it forever.
 func (s *Store) Fail(ctx context.Context, id int64, code, message string, maxAttempts int) (state string, err error) {
@@ -143,6 +159,15 @@ func (s *Store) Fail(ctx context.Context, id int64, code, message string, maxAtt
 	attempts++
 	state = "planned"
 	if maxAttempts > 0 && attempts >= maxAttempts {
+		state = "failed"
+	}
+	// A structural verification failure cannot improve on a retry: the same
+	// source, the same encoder and the same rung produce the same file, so the
+	// second and third attempts are the first one again. Measured 2026-11-15:
+	// four files parked after three or four full encodes each (ratio 1.008,
+	// 1.026, 1.042, 1.280 against the 0.98 ceiling), and one 0.324 against the
+	// floor. Parking on the first attempt gives that window time back.
+	if parksImmediately(code) {
 		state = "failed"
 	}
 	err = s.exec(ctx, `

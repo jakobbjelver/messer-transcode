@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/jakobbjelver/messer-transcode/internal/config"
 	"net/http"
 	"net/http/httptest"
@@ -61,15 +63,69 @@ func TestAbandonedJobIsRequeued(t *testing.T) {
 		t.Fatalf("second claim should find nothing, got %d", code)
 	}
 
-	// Age the claim past the lease.
+	// Age the claim past the lease: a node that died sends neither progress nor
+	// a heartbeat, so both stamps stop when the claim happens.
 	if _, err := s.st.DB().Exec(
-		`UPDATE files SET updated_at = ? WHERE state = 'encoding'`,
-		time.Now().Add(-2*leaseDuration).Unix()); err != nil {
+		`UPDATE files SET updated_at = ?, lease_at = ? WHERE state = 'encoding'`,
+		time.Now().Add(-2*leaseDuration).Unix(), time.Now().Add(-2*leaseDuration).Unix()); err != nil {
 		t.Fatal(err)
 	}
 
 	if code := claim(); code != http.StatusOK {
 		t.Fatalf("claim after lease expiry: %d, want 200 (the abandoned job)", code)
+	}
+}
+
+// A job that is being worked on must survive its lease. The node heartbeats
+// every couple of seconds while it encodes, and a prefetched file can wait a
+// whole encode before the encoder takes it — so if the lease only counted from
+// the claim, every file longer than the lease came back as "abandoned" and was
+// claimed (and encoded) a second time.
+func TestHeartbeatKeepsTheLease(t *testing.T) {
+	s := newTestServer(t)
+
+	claim := func() (int, int64) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/node/claim", strings.NewReader(`{"node":"mini"}`))
+		req.Header.Set("X-Node-Token", testToken)
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			return rec.Code, 0
+		}
+		var body struct {
+			Job struct {
+				ID int64 `json:"id"`
+			} `json:"job"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("claim body: %v", err)
+		}
+		return rec.Code, body.Job.ID
+	}
+
+	code, id := claim()
+	if code != http.StatusOK || id == 0 {
+		t.Fatalf("first claim: %d job %d, want 200 with an id", code, id)
+	}
+
+	// The node reports progress, as it does every two seconds while encoding.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/node/jobs/%d/heartbeat", id),
+		strings.NewReader(`{"fraction":0.4,"speed":9.5}`))
+	req.Header.Set("X-Node-Token", testToken)
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("heartbeat: %d, want 204", rec.Code)
+	}
+
+	// Ten minutes on: the claim stamp is old, the heartbeat is not.
+	old := time.Now().Add(-10 * time.Minute).Unix()
+	if _, err := s.st.DB().Exec(`UPDATE files SET updated_at = ?, started_at = ? WHERE id = ?`, old, old, id); err != nil {
+		t.Fatal(err)
+	}
+
+	if code, got := claim(); code != http.StatusNoContent {
+		t.Fatalf("claim after 10 minutes with a live heartbeat: %d (job %d), want 204 — the lease was not renewed", code, got)
 	}
 }
 
