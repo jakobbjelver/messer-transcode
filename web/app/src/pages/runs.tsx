@@ -75,7 +75,7 @@ export function RunsPage() {
                 <TableHead className="m-label hidden text-right lg:table-cell">Remuxed</TableHead>
                 <TableHead className="m-label text-right">Back</TableHead>
                 <TableHead className="m-label hidden text-right md:table-cell">VMAF</TableHead>
-                <TableHead className="m-label hidden text-right md:table-cell">Busy</TableHead>
+                <TableHead className="m-label hidden text-right md:table-cell">Occupied</TableHead>
                 <TableHead className="m-label text-right">Failed</TableHead>
               </TableRow>
             </TableHeader>
@@ -109,7 +109,7 @@ export function RunsPage() {
                   <TableCell className="m-data hidden text-right md:table-cell">
                     {r.vmaf_n ? r.vmaf_mean?.toFixed(1) : "—"}
                   </TableCell>
-                  <TableCell className="m-data hidden text-right md:table-cell">{pct(r.busy_percent)}</TableCell>
+                  <TableCell className="m-data hidden text-right md:table-cell">{pct(r.occupied_percent)}</TableCell>
                   <TableCell className="m-data text-right">
                     {r.failed ? (
                       <span className="text-destructive">{r.failed}</span>

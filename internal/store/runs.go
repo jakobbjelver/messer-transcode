@@ -140,11 +140,15 @@ type RunAggregate struct {
 	Before      int64
 	After       int64
 	BusySeconds int64
-	VmafN       int
-	VmafSum     float64
-	VmafMin     float64
-	FailedCodes map[string]int
-	SkipCodes   map[string]int
+	// WastedSeconds is the time spent on rows that were claimed and then
+	// failed or were parked. It is not in BusySeconds — that figure is what a
+	// night bought — and it is not nothing either: the encoder was occupied.
+	WastedSeconds int64
+	VmafN         int
+	VmafSum       float64
+	VmafMin       float64
+	FailedCodes   map[string]int
+	SkipCodes     map[string]int
 }
 
 // RunAggregates gathers the finished, failed and skipped figures for a set of
@@ -241,6 +245,32 @@ GROUP BY run_id, 2`, append(append([]any{}, args...), q.state)...)
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
+	}
+
+	// Wasted time: rows that were claimed and then failed or were parked. A
+	// failure stamps updated_at, so started_at→updated_at is how long the node
+	// held the file; a plan-time skip was never claimed and adds nothing.
+	wasted, err := s.db.QueryContext(ctx, `
+SELECT run_id, COALESCE(SUM(CASE WHEN started_at > 0 AND COALESCE(updated_at,0) > started_at
+                                 THEN updated_at - started_at ELSE 0 END), 0)
+FROM files
+WHERE run_id IN (`+ph+`) AND COALESCE(NULLIF(retired_from,''), state) IN ('failed','skipped')
+GROUP BY run_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = wasted.Close() }()
+	for wasted.Next() {
+		var id, secs int64
+		if err := wasted.Scan(&id, &secs); err != nil {
+			return nil, err
+		}
+		a := out[id]
+		a.WastedSeconds = secs
+		out[id] = a
+	}
+	if err := wasted.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

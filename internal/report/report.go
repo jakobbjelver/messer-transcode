@@ -44,13 +44,23 @@ type Run struct {
 	Before  int64 `json:"bytes_before"`
 	After   int64 `json:"bytes_after"`
 
-	// BusySeconds is the sum of encode runtimes: time the node was actually
-	// working, against WindowSeconds for the length of the window.
+	// BusySeconds is the sum of file times that bought something: a row that
+	// finished. Against WindowSeconds it is how much of the window produced a
+	// file.
 	BusySeconds int64 `json:"busy_seconds"`
 
-	// BusyPercent is Utilisation resolved at collection time, so templates and
-	// JSON do not each have to know what "now" was.
-	BusyPercent float64 `json:"busy_percent"`
+	// WastedSeconds is the time spent on rows that were claimed and then
+	// failed or were parked. The encoder was occupied for it and the library
+	// got nothing back — the number that made a 33 %-busy night look idle when
+	// the node had, in fact, been encoding the whole time.
+	WastedSeconds int64 `json:"wasted_seconds"`
+
+	// BusyPercent, WastedPercent and OccupiedPercent are the three rates
+	// resolved at collection time, so templates and JSON do not each have to
+	// know what "now" was. Occupied is Busy + Wasted: the honest duty cycle.
+	BusyPercent     float64 `json:"busy_percent"`
+	WastedPercent   float64 `json:"wasted_percent"`
+	OccupiedPercent float64 `json:"occupied_percent"`
 
 	VmafMean float64 `json:"vmaf_mean,omitempty"`
 	VmafMin  float64 `json:"vmaf_min,omitempty"`
@@ -78,21 +88,37 @@ func (r Run) WindowSeconds(now time.Time) int64 {
 	return int64(end.Sub(r.Start).Seconds())
 }
 
-// Utilisation is the share of the window covered by file time, 0-100.
+// Utilisation is the share of the window covered by file time that finished,
+// 0-100.
 //
 // It is an upper bound, not encoder utilisation: ingest, encode and placement
 // run in separate lanes, so two files' wall time can overlap. Clamped to 100
 // for that reason — a number above that reads as a bug rather than as work.
 func (r Run) Utilisation(now time.Time) float64 {
+	return r.percent(r.BusySeconds, now)
+}
+
+// Wasted is the share of the window spent on files that then failed or parked.
+func (r Run) Wasted(now time.Time) float64 {
+	return r.percent(r.WastedSeconds, now)
+}
+
+// Occupied is the share of the window the encoder was holding a file at all,
+// productive or not.
+func (r Run) Occupied(now time.Time) float64 {
+	return r.percent(r.BusySeconds+r.WastedSeconds, now)
+}
+
+func (r Run) percent(secs int64, now time.Time) float64 {
 	w := r.WindowSeconds(now)
 	if w <= 0 {
 		return 0
 	}
-	u := float64(r.BusySeconds) / float64(w) * 100
-	if u > 100 {
+	p := float64(secs) / float64(w) * 100
+	if p > 100 {
 		return 100
 	}
-	return u
+	return p
 }
 
 // Windows returns the last n window occurrences up to now, newest first,
@@ -159,16 +185,17 @@ func FromRow(row store.RunRow, agg store.RunAggregate, now time.Time) Run {
 		w.End = time.Unix(row.EndAt, 0).In(time.Local)
 	}
 	r := Run{
-		ID:          row.ID,
-		Window:      w,
-		Open:        row.ClosedAt == 0 && now.After(w.Start),
-		Done:        agg.Done,
-		Before:      agg.Before,
-		After:       agg.After,
-		BusySeconds: agg.BusySeconds,
-		Encoded:     agg.Encoded,
-		Remuxed:     agg.Remuxed,
-		VmafN:       agg.VmafN,
+		ID:            row.ID,
+		Window:        w,
+		Open:          row.ClosedAt == 0 && now.After(w.Start),
+		Done:          agg.Done,
+		Before:        agg.Before,
+		After:         agg.After,
+		BusySeconds:   agg.BusySeconds,
+		WastedSeconds: agg.WastedSeconds,
+		Encoded:       agg.Encoded,
+		Remuxed:       agg.Remuxed,
+		VmafN:         agg.VmafN,
 	}
 	if agg.VmafN > 0 {
 		r.VmafMean = agg.VmafSum / float64(agg.VmafN)
@@ -189,6 +216,8 @@ func FromRow(row store.RunRow, agg store.RunAggregate, now time.Time) Run {
 		r.Skipped += n
 	}
 	r.BusyPercent = r.Utilisation(now)
+	r.WastedPercent = r.Wasted(now)
+	r.OccupiedPercent = r.Occupied(now)
 	return r
 }
 

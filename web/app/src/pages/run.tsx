@@ -97,9 +97,13 @@ export function RunPage() {
             hint={run.vmaf_n ? `min ${run.vmaf_min?.toFixed(1)} · ${run.vmaf_n} measured` : "no VMAF this run"}
           />
           <Stat
-            label="Busy"
-            value={pct(run.busy_percent)}
-            hint={run.failed ? `${run.failed} failed` : "nothing failed"}
+            label="Occupied"
+            value={pct(run.occupied_percent)}
+            hint={
+              run.wasted_percent > 0.5
+                ? `${pct(run.wasted_percent)} wasted`
+                : "all of it bought files"
+            }
           />
         </div>
       </Section>
