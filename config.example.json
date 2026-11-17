@@ -3,7 +3,7 @@
   "libraries": [
     {
       "name": "media",
-      "root": "/Volumes/Media/Library",
+      "root": "/srv/media/library",
       "extensions": [".mkv", ".mp4", ".mov", ".m4v"],
       "exclude": ["**/Sample/**", "**/*.sample.mkv", "**/.*"]
     }
@@ -18,8 +18,8 @@
   },
   "workers": { "encode": 1, "probe": 2, "ingest_buffer": 2 },
   "paths": {
-    "scratch": "/Volumes/Active/Hot/transcode",
-    "quarantine": "/Volumes/Media/Quarantine"
+    "scratch": "/srv/scratch/transcode",
+    "quarantine": "/srv/media/quarantine"
   },
   "quality": {
     "mode": "table",

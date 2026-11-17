@@ -66,10 +66,14 @@ docker run --rm -v server_configs_video_transcode:/config \
 container:
 
 ```bash
-pm2 start deploy/ecosystem.transcode.config.cjs   # first time, from the repo
+pm2 start ./bin/messer-transcode --name transcode-node -- \
+  node --config config.json --token-file server.token --name "$(hostname -s)"
 pm2 restart transcode-node                        # after make build
 pm2 logs transcode-node --lines 40 --nostream
 ```
+
+Any supervisor works — a launchd agent, a systemd unit, PM2 — as long as it restarts the node and
+passes `SIGTERM` through unchanged.
 
 **The token.** The node authenticates with a token that must not sit in
 `config.json` (committed beside it) or in the stack environment (Komodo rewrites
@@ -173,7 +177,7 @@ The same rule applies to writes, which are worse: see the note in
 One SIGTERM means "finish the current file, then exit". The node stops claiming,
 the encode in flight is **not** cancelled, the result is reported, and the
 process exits 0. Expect up to one film's worth of delay; `kill_timeout` in
-`deploy/ecosystem.transcode.config.cjs` is ten minutes for that reason.
+the supervisor's kill timeout is set to ten minutes for that reason.
 
 A second SIGTERM exits immediately with code 130. That abandons the file: the
 journal records it, and the next start reports `E_NODE_INTERRUPTED`.

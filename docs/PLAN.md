@@ -100,7 +100,7 @@ this SoC; iPhone/Apple TV would transcode on playback) · editing metadata (nfo/
 │  messer-transcode server     │  HTTP   │  messer-transcode node        │
 │  (Docker, always-on)         │◀───────▶│  (macOS host, PM2)            │
 │                              │  pull   │                               │
-│  • SQLite state (WAL)        │         │  • walks /Volumes/Media       │
+│  • SQLite state (WAL)        │         │  • walks /srv/media       │
 │  • queue + rules engine      │         │  • ffprobe / exiftool         │
 │  • planner (decisions)       │         │  • VMAF sampling              │
 │  • scheduler + window        │         │  • ffmpeg encode (VTB)        │
@@ -109,8 +109,8 @@ this SoC; iPhone/Apple TV would transcode on playback) · editing metadata (nfo/
 └──────────────────────────────┘         └───────────────────────────────┘
         ▲                                          │
         │ Caddy route                              │ reads/writes
-   transcode.local                          /Volumes/Media  (HDD)
-   transcode.messer.wtf                     /Volumes/Active (NVMe scratch)
+   transcode.local                          /srv/media  (HDD)
+   transcode.messer.wtf                     /srv/scratch (NVMe scratch)
 ```
 
 ### 3.2 Job protocol (v1)
@@ -245,7 +245,7 @@ encode. Scratch free space is a first-class gauge in the UI and a scheduling con
   "libraries": [
     {
       "name": "media",
-      "root": "/Volumes/Media/Library",
+      "root": "/srv/media/library",
       "extensions": [".mkv", ".mp4", ".mov", ".m4v"],
       "exclude": ["**/Sample/**", "**/*.sample.mkv", "**/.*"]
     }
@@ -261,8 +261,8 @@ encode. Scratch free space is a first-class gauge in the UI and a scheduling con
   "workers": { "encode": 1, "probe": 2, "ingest_buffer": 2 },
 
   "paths": {
-    "scratch": "/Volumes/Active/Hot/transcode",
-    "quarantine": "/Volumes/Media/Quarantine"
+    "scratch": "/srv/scratch/transcode",
+    "quarantine": "/srv/media/quarantine"
   },
 
   "quality": {
@@ -409,7 +409,7 @@ M2. Nothing is written to disk by `plan`.
 | 2.4 | `internal/transcode/replace.go`: fsync, atomic rename, quarantine move, `flock`; test with a simulated power-loss (rename fails → source intact) |
 | 2.5 | `internal/transcode/pipeline.go`: the full state machine from §3.3, resumable; crash-injection test (kill between every pair of transitions) |
 | 2.6 | `cmd/messer-transcode run --once --limit 1` against a *copy* of one film |
-| 2.7 | Extend to `--limit 20` on copies in `/Volumes/Active/tc-test/`, quarantine to a temp dir |
+| 2.7 | Extend to `--limit 20` on copies in `/srv/scratch/tc-test/`, quarantine to a temp dir |
 
 **Gate:** 20 files encoded from copies. All pass verify; originals present in quarantine; VMAF
 recorded; `sqlite3` shows `done` for each; no file outside the test directory touched. Then one
@@ -524,7 +524,7 @@ here exists so that the loop "he reports → I build → he approves → it ship
 | 10.1 | Complete the `messer-transcode` skill (thin version exists from M0): operating procedures, error-code table, dev loop, publish steps, troubleshooting |
 | 10.2 | `actions/actions.json` — Portal Actions contract for the dev server (`run_on: "host"` on every step; start / stop / status), same shape as the other repos |
 | 10.3 | Dev route in `services.yaml`: `transcode-dev` → `cloudflare_via_caddy: true`, Caddy directive to `host.docker.internal:8099`; `setup.py` regenerated, then verified through Caddy and the tunnel leg |
-| 10.4 | PM2 dev app `messer-transcode-dev` + `~/Scripts/run-dev.sh` wrapper; `make dev` rebuilds and restarts; dev config uses `.dev/state.db` and `/Volumes/Active/tc-test` |
+| 10.4 | PM2 dev app `messer-transcode-dev` + `~/Scripts/run-dev.sh` wrapper; `make dev` rebuilds and restarts; dev config uses `.dev/state.db` and `/srv/scratch/tc-test` |
 | 10.5 | `release.yml`: semantic-release on `main`, build `darwin/arm64` + `linux/amd64`, push `ghcr.io/m3sserstudi0s/messer-transcode`, attach binaries to the release |
 | 10.6 | `docs/operations.md` (window, pause, drain, quarantine restore, disk floors) and `docs/troubleshooting.md` (one section per error code) |
 | 10.7 | Monthly `doctor` cron (`no_agent`, silent when clean) reporting the same verdict as the daily health check |
@@ -691,7 +691,7 @@ Pieces and why each is shaped that way:
 | Piece | Detail | Why |
 |---|---|---|
 | Dev server | `messer-transcode-dev` under PM2, port **8099**, `transcode-dev.local` / `transcode-dev.messer.wtf` | `:3000` is a one-at-a-time convention across all repos; this one runs continuously and must not contend with site or portal |
-| Dev data | `.dev/state.db`, library `/Volumes/Active/tc-test` (5 generated clips) | never point a dev build at the 10 TB library |
+| Dev data | `.dev/state.db`, library `/srv/scratch/tc-test` (5 generated clips) | never point a dev build at the 10 TB library |
 | Portal Actions | `actions/actions.json` with `run_on: "host"` on every step | the same contract the Portal Dev Server UI already drives for other repos |
 | CI | `ci.yml` on push: gofmt, vet, `go test -race`, golangci-lint, docker build | matches `server-portal` / `swiparr` |
 | Release | `release.yml`: semantic-release on `main`, `darwin/arm64` + `linux/amd64`, ghcr push, binaries attached | reuse the existing convention, don't invent a versioning scheme |
@@ -711,7 +711,7 @@ Pieces and why each is shaped that way:
 | VMAF probe adds too much time | calibration table by default; probe only for outliers > 12 Mbps |
 | Scope creep into a plugin system | §2 non-goals; config is rules, not a DAG |
 | Public repo exposes personal paths or hostnames | no paths in code; `config.json` gitignored, `config.example.json` shipped; README audited at M9 for `messer.wtf` references |
-| Dev build pointed at the real library | dev config hard-codes `.dev/state.db` and `/Volumes/Active/tc-test`; a test asserts the dev binary refuses a library root containing `3,000+` files |
+| Dev build pointed at the real library | dev config hard-codes `.dev/state.db` and `/srv/scratch/tc-test`; a test asserts the dev binary refuses a library root containing `3,000+` files |
 | The project dies when attention moves elsewhere | M10's whole purpose: skill, doctor cron, Portal Actions, one-command publish. If it rots, the daily health check says so |
 | Skill drifts from the code | the skill's operating section is generated from `--help` output and error codes at M10; `docs/troubleshooting.md` is the source of truth |
 
@@ -751,8 +751,8 @@ Anything not listed here was decided in §2 (D1–D16) and stands.
 | Tdarr node wrapper (PM2) | `~/Server/scripts/tdarr-node-wrapper.sh` |
 | Tdarr compose block | `~/Server/compose.video.yaml` (service `tdarr`) |
 | Tdarr services.yaml entry | `~/Server/services.yaml:110` (`tdarr`, subdomain `tdarr-server`) |
-| Tdarr job reports (delete at M8) | `/Volumes/Media/Data/Services/tdarr/JobReports` |
-| Transcode cache | `/Volumes/Active/Hot/tdarr/transcode_cache` |
+| Tdarr job reports (delete at M8) | `/srv/media/data/tdarr/JobReports` |
+| Transcode cache | `/srv/scratch/tdarr` |
 | Brew dependency audit | `skills/devops/system-health-check/scripts/brew-dep-audit.sh` |
 
 ### Library facts to reuse instead of re-measuring

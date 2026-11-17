@@ -266,8 +266,8 @@ export function ConfigPage() {
 
             <Section eyebrow="paths" aside="node-local, absolute">
               <div className="grid gap-4 sm:grid-cols-2">
-                <TextField path="/paths/scratch" label="Scratch" placeholder="/Volumes/Active/scratch" />
-                <TextField path="/paths/quarantine" label="Quarantine" placeholder="/Volumes/Media/.quarantine" />
+                <TextField path="/paths/scratch" label="Scratch" placeholder="/srv/scratch" />
+                <TextField path="/paths/quarantine" label="Quarantine" placeholder="/srv/media/.quarantine" />
               </div>
             </Section>
 

@@ -1,0 +1,48 @@
+# Messer Transcode
+
+> A transcode pipeline that runs itself. One Go binary, two roles: an orchestrator that owns the queue
+> and every decision, and a native worker that encodes with VideoToolbox.
+
+Read this before changing anything. `AGENTS.md` is the contract; `docs/PLAN.md` is the specification.
+
+## Run
+
+```sh
+make build                 # bin/messer-transcode
+./bin/messer-transcode doctor --config config.json
+./bin/messer-transcode serve  --config config.json --db state.db   # orchestrator
+./bin/messer-transcode node   --config config.json --token-file server.token  # worker
+```
+
+`make check` is the gate: gofmt, vet, tests, and the frontend type check. `make web-dev` runs the
+dashboard against a dev database in `.dev/`.
+
+## Contract
+
+- `docs/PLAN.md` — the binding decisions (16 of them) and the measured facts behind the rules.
+- `docs/server.md` — every route, and why the database is the whole state.
+- `docs/llms.txt` — this file's longer sibling for an agent that is about to change code.
+
+## Invariants
+
+1. **The container never mounts the library.** A component that cannot touch the films cannot damage
+   them; only the node writes to the media volume.
+2. **Nothing is deleted.** Encode → verify → `fsync` → atomic rename → the original to a dated
+   quarantine. A failure at any step leaves the library exactly as it was.
+3. **One writer owns the database.** Two servers pointed at one SQLite file fight; run one orchestrator
+   and scale nodes.
+4. **A decision carries its rule code.** `R_H264_ENCODE`, `R_ALREADY_LEAN`, `R_QUALITY_FLOOR` — a plan row
+   without a reason is a bug, and the rule list is validated before it runs.
+
+## Do not
+
+- Add a second encode at a time on the media volume: four concurrent ffmpeg processes collapse
+  throughput to 0.3×.
+- Re-encode content that cannot reach the quality floor — skip it and leave it untouched.
+- Name a host, a home path or a private domain in a shipped file.
+- Delete before a verified replacement exists, in any code path, including tests and quarantine sweeps.
+
+## Licence
+
+MIT. Contributions are closed; bug reports and ideas are welcome as issues. A vulnerability goes to a
+private advisory, never a public issue.
