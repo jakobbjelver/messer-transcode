@@ -50,6 +50,26 @@ ON CONFLICT(path) DO UPDATE SET
                      OR files.size_bytes <> excluded.size_bytes
                      OR files.mtime_ns   <> excluded.mtime_ns
                     THEN 'new' ELSE files.state END,
+  -- A changed file loses its verdict with its probe. The decision, the reason
+  -- and the rung were all read from bytes that are no longer there; keeping
+  -- them left the row in "probed" with a stale verdict that the planner never
+  -- revisits, because it only judges rows with no decision.
+  decision = CASE WHEN files.state = 'gone'
+                       OR files.size_bytes <> excluded.size_bytes
+                       OR files.mtime_ns   <> excluded.mtime_ns
+                  THEN NULL ELSE files.decision END,
+  reason = CASE WHEN files.state = 'gone'
+                     OR files.size_bytes <> excluded.size_bytes
+                     OR files.mtime_ns   <> excluded.mtime_ns
+                THEN NULL ELSE files.reason END,
+  reason_code = CASE WHEN files.state = 'gone'
+                          OR files.size_bytes <> excluded.size_bytes
+                          OR files.mtime_ns   <> excluded.mtime_ns
+                     THEN NULL ELSE files.reason_code END,
+  target_kbps = CASE WHEN files.state = 'gone'
+                          OR files.size_bytes <> excluded.size_bytes
+                          OR files.mtime_ns   <> excluded.mtime_ns
+                     THEN NULL ELSE files.target_kbps END,
   -- A revived file has no retirement behind it any more, so the run ledger must
   -- read its live state again rather than the one the retirement preserved.
   retired_from = CASE WHEN files.state = 'gone'
@@ -242,15 +262,20 @@ type Undecided struct {
 	AudioTracks string
 }
 
-// FilesNeedingDecision returns probed files without a verdict. A gone row keeps
-// whatever verdict it had; deciding it again would put a deleted file back in
-// the queue.
+// FilesNeedingDecision returns probed files without a verdict, plus rows left
+// in "probed" with one. A gone row keeps whatever verdict it had; deciding it
+// again would put a deleted file back in the queue.
+//
+// The second clause is the repair path for a file that changed while the old
+// upsert kept its verdict: the row was re-probed, so its facts are current, and
+// the verdict is what is stale. Only a probe refreshes a row into this state,
+// so the clause cannot catch a row that was merely claimed.
 func (s *Store) FilesNeedingDecision(ctx context.Context) ([]Undecided, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, path, size_bytes, COALESCE(width,0), COALESCE(height,0), COALESCE(video_codec,''), COALESCE(bitrate_kbps,0),
        COALESCE(audio_tracks,'[]')
 FROM files
-WHERE probe_key IS NOT NULL AND (decision IS NULL OR decision = '') AND state <> 'gone'
+WHERE probe_key IS NOT NULL AND (decision IS NULL OR decision = '' OR state = 'probed') AND state <> 'gone'
 ORDER BY id`)
 	if err != nil {
 		return nil, err
