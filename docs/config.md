@@ -21,7 +21,7 @@ One entry per root the node walks. Roots must be absolute and may not be `/`.
 
 ```json
 { "name": "movies",
-  "root": "/Volumes/Media/Library/Movies",
+  "root": "/srv/media/movies",
   "extensions": [".mkv", ".mp4", ".m4v", ".mov"],
   "exclude": ["**/Sample/**", "**/*.sample.mkv", "**/.*", "**/Extras/**"] }
 ```
@@ -74,7 +74,7 @@ pre-staged on fast storage ahead of the encoder.
 ## `paths`
 
 ```json
-{ "scratch": "/Volumes/Active/Hot/transcode", "quarantine": "/Volumes/Media/Quarantine" }
+{ "scratch": "/srv/scratch/transcode", "quarantine": "/srv/media/quarantine" }
 ```
 
 Both absolute, both on the node. Validation rejects a scratch or quarantine directory that lives

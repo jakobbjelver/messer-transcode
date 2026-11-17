@@ -7,7 +7,7 @@ copies and never written to; its file size is byte-identical before and after
 ## Run 1 — 20 synthetic files
 
 Twelve H.264 clips, four efficient HEVC, two 720p, two already-lean. Built in
-`/Volumes/Active/tc-test/`.
+`/srv/scratch/tc-test/`.
 
 | Decision | Files | Result |
 |---|---:|---|

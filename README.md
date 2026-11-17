@@ -1,7 +1,3 @@
-<img src="docs/img/logo.svg" width="96" height="96" alt="">
-
-# messer-transcode
-
 A transcode pipeline that runs itself.
 
 One Go binary, two roles: an **orchestrator** in a container that owns the queue
@@ -9,77 +5,22 @@ and every decision, and a **native worker** on the host that does the encoding
 with Apple's VideoToolbox. The container never mounts the media library. A
 component that cannot touch the films cannot damage them.
 
-```
-                     ┌──────────────────────────────┐
-   browser ─────────▶│  orchestrator (container)    │
-                     │  queue · rules · UI · verdict │
-                     └──────┬───────────────▲───────┘
-                            │ claim         │ progress, result
-                     ┌──────▼───────────────┴───────┐
-                     │  node (macOS, PM2)           │
-                     │  ingest → encode → verify →  │
-                     │  atomic replace → quarantine │
-                     └──────┬───────────────────────┘
-                            │ VideoToolbox, ffmpeg
-                     ┌──────▼───────────────────────┐
-                     │  /Volumes/Media              │
-                     └──────────────────────────────┘
-```
-
-## What it does
-
-Scans a library, decides per file, and re-encodes only what is worth
-re-encoding. On a 3,109-file, 10.26 TB library it wanted:
-
-| | files | decision |
-|---|---:|---|
-| encode | 380 | H.264 or over-bitrate HEVC → HEVC at a measured target |
-| remux | 2,005 | container and stream cleanup, no quality loss |
-| leave alone | 720 | already lean, or a projected saving under 10 % |
-| unreadable | 4 | zero-byte files that predate this tool |
-
-Projected: **669 GB** returned to disk. Tdarr's flow wanted to *re-encode* 92 %
-of the same library; this re-encodes **12 %** and touches the rest only to remux
-or not at all.
-
-<p align="center">
-  <img src="docs/img/dashboard.png" width="820" alt="The dashboard: the reclaim, the queue, the run in flight, and the last few runs">
-</p>
-
-## The four ideas it is built on
-
-**A flat, ordered rule list.** Not a 39-node visual flow. The last rule is the
-default, the list is validated before it runs, and every decision carries the
-code that produced it (`R_H264_ENCODE`, `R_ALREADY_LEAN`, `R_QUALITY_FLOOR`).
-
-**A measured quality target, not a guessed bitrate.** `calibrate` encodes real
-windows of your own films at several bitrates and reports the VMAF curve. Here
-that produced 6,000 kbps for HEVC at VMAF 95.0, and 92.9 as the honest
-expectation for H.264 sources — which top out lower because the grain is
-already gone. Content that cannot reach the floor is **skipped and left
-untouched**, not retried forever.
-
-**Nothing is ever deleted.** Encode to scratch, verify, `fsync`, atomic rename,
-then the original moves to a dated quarantine. A failure at any step leaves the
-library exactly as it was.
-
-**One media engine, respected.** Four concurrent ffmpeg processes on the media
-volume collapse throughput to 0.3×. One worker, and the encoder never waits for
-I/O: ingest and placement run in their own lanes. Measured idle time between
-files: **0.2 %**.
-
-## Quick start
+## Run
 
 ```sh
 go build -o bin/messer-transcode ./cmd/messer-transcode
 ./bin/messer-transcode validate config.example.json
-./bin/messer-transcode plan  --config config.json --db state.db
-./bin/messer-transcode serve --config config.json --db state.db
-./bin/messer-transcode node  --config config.json --token-file server.token
+./bin/messer-transcode plan   --config config.json --db state.db
+./bin/messer-transcode serve  --config config.json --db state.db
+./bin/messer-transcode node   --config config.json --token-file server.token
 ```
 
-`doctor` answers whether the thing works at all, with one verdict object and an
-exit code a script can branch on:
+`serve` is the orchestrator (read API, the dashboard, the endpoints a node claims work through);
+`node` is the worker, and it has to run where the hardware encoder and the library live. Apple silicon
+only: `hevc_videotoolbox` is the point.
+
+`doctor` answers whether the thing works at all, with one verdict object and an exit code a script can
+branch on:
 
 ```
 $ messer-transcode doctor --config config.json
@@ -95,21 +36,82 @@ $ messer-transcode doctor --config config.json
 status: ok
 ```
 
-A failing check names the code and the command that fixes it — `E_NODE_SILENT`
-when work is queued and nothing has reported, `E_BINARY_MISSING` when a Homebrew
-upgrade has removed a library out from under ffmpeg, `E_ENCODER_UNAVAILABLE`
-when the hardware encoder refuses a test frame.
+A failing check names the code and the command that fixes it — `E_NODE_SILENT` when work is queued and
+nothing has reported, `E_BINARY_MISSING` when a Homebrew upgrade removed a library from under ffmpeg,
+`E_ENCODER_UNAVAILABLE` when the hardware encoder refuses a test frame.
 
-And it accounts for itself afterwards. A **run** is one occurrence of the
-configured window, whatever hours that window covers — this is a real capture
-from a deliberately short window set to 13:29–13:38 to prove the scheduling:
+## What it does
 
 ```
-$ messer-transcode report --last 1
-schedule  13:29-13:38 weekdays · 13:29-13:38 weekends · Europe/Copenhagen
-
-  Sat 07 Nov 13:29–13:38 (weekend): 2 done (0 encoded, 2 remuxed), 0.31 GB reclaimed, 98% of the window busy
+                     ┌──────────────────────────────┐
+   browser ─────────▶│  orchestrator (container)    │
+                     │  queue · rules · UI · verdict │
+                     └──────┬───────────────▲───────┘
+                            │ claim         │ progress, result
+                     ┌──────▼───────────────┴───────┐
+                     │  node (macOS)                │
+                     │  ingest → encode → verify →  │
+                     │  atomic replace → quarantine │
+                     └──────┬───────────────────────┘
+                            │ VideoToolbox, ffmpeg
+                     ┌──────▼───────────────────────┐
+                     │  the media volume            │
+                     └──────────────────────────────┘
 ```
+
+It scans a library, decides per file, and re-encodes only what is worth re-encoding. On a 3,109-file,
+10.26 TB library it wanted:
+
+| | files | decision |
+|---|---:|---|
+| encode | 380 | H.264 or over-bitrate HEVC → HEVC at a measured target |
+| remux | 2,005 | container and stream cleanup, no quality loss |
+| leave alone | 720 | already lean, or a projected saving under 10 % |
+| unreadable | 4 | zero-byte files that predate this tool |
+
+Projected: **669 GB** returned to disk. Tdarr's flow wanted to *re-encode* 92 % of the same library;
+this re-encodes **12 %** and touches the rest only to remux or not at all.
+
+## The four ideas it is built on
+
+**A flat, ordered rule list.** Not a 39-node visual flow. The last rule is the default, the list is
+validated before it runs, and every decision carries the code that produced it (`R_H264_ENCODE`,
+`R_ALREADY_LEAN`, `R_QUALITY_FLOOR`).
+
+**A measured quality target, not a guessed bitrate.** `calibrate` encodes real windows of your own films
+at several bitrates and reports the VMAF curve. Here that produced 6,000 kbps for HEVC at VMAF 95.0, and
+92.9 as the honest expectation for H.264 sources — which top out lower because the grain is already
+gone. Content that cannot reach the floor is **skipped and left untouched**, not retried forever.
+
+**Nothing is ever deleted.** Encode to scratch, verify, `fsync`, atomic rename, then the original moves
+to a dated quarantine. A failure at any step leaves the library exactly as it was.
+
+**One media engine, respected.** Four concurrent ffmpeg processes on the media volume collapse
+throughput to 0.3×. One worker, and the encoder never waits for I/O: ingest and placement run in their
+own lanes. Measured idle time between files: **0.2 %**.
+
+## API
+
+`/api/v1`, JSON, behind a bearer token for the node's endpoints and open reads for the dashboard. The
+database is the whole state: two servers pointed at the same file would fight, so run one and scale the
+nodes. The full route list, with the reasoning: [`docs/server.md`](docs/server.md).
+
+| Method | Path | |
+|---|---|---|
+| `GET` | `/` | overview: reclaim, counts, queue strip, current job, activity |
+| `GET` | `/api/v1/health` | the doctor verdict as JSON, for a monitor |
+| `POST` | `/api/v1/runs` | open a run (the node) |
+| `GET` | `/api/v1/plan` | the ordered decision list for the next file |
+
+## Agents
+
+Read [`AGENTS.md`](AGENTS.md) — the code contract and the invariants. The primer is
+[`docs/llms.txt`](docs/llms.txt); the specification is [`docs/PLAN.md`](docs/PLAN.md). `make check` is
+the gate.
+
+Contributions are closed, with one exception: bug reports and ideas are welcome as **issues**. Patches
+are not taken — this is a tool shaped around one library and one machine. A vulnerability goes to a
+private advisory, per [`SECURITY.md`](SECURITY.md).
 
 ## Documentation
 
@@ -124,17 +126,9 @@ schedule  13:29-13:38 weekdays · 13:29-13:38 weekends · Europe/Copenhagen
 
 ## Status
 
-Running on a real library since November 2026. The pipeline, the orchestrator,
-the worker, health checks and the run report are complete; the public release is
-the last milestone. Apple silicon only: `hevc_videotoolbox` is the point, and
-the worker has to run where the hardware encoder lives.
-
-## Contributing
-
-Issues are welcome — bug reports and ideas alike. I do not accept pull requests:
-this is a tool shaped around one library and one machine, and outside patches
-would have to be maintained against that. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Running on a real library since November 2026. The pipeline, the orchestrator, the worker, health checks
+and the run report are complete; a seeded demo capture for this page is the last documentation task.
 
 ## License
 
-MIT © 2026 Jakob Bjelvér
+MIT © 2026 Jakob Bjelvér. Not accepting contributions — see [`CONTRIBUTING.md`](CONTRIBUTING.md).

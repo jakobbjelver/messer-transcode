@@ -70,7 +70,7 @@ func TestDecodeRejectsOutOfRange(t *testing.T) {
 		{"bad day", `"days": ["sat", "sun"]`, `"days": ["caturday"]`},
 		{"bad codec", `"codec": "h264", "height_gte": 2000`, `"codec": "vp9", "height_gte": 2000`},
 		{"zero workers", `"encode": 1`, `"encode": 0`},
-		{"root catalogue", `"root": "/Volumes/Media/Library"`, `"root": "/"`},
+		{"root catalogue", `"root": "/srv/media/library"`, `"root": "/"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data, err := os.ReadFile("../../config.example.json")

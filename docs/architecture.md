@@ -16,8 +16,8 @@ Two processes, one binary.
 └──────────────────────────────┘         └───────────────────────────────┘
         ▲                                          │
         │ Caddy route                              │ reads/writes
-   transcode.local                          /Volumes/Media  (HDD)
-   transcode.messer.wtf                     /Volumes/Active (NVMe scratch)
+   transcode.local                          /srv/media  (HDD)
+   transcode.messer.wtf                     /srv/scratch (NVMe scratch)
 ```
 
 ## Why the split is not negotiable
