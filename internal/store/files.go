@@ -268,6 +268,44 @@ ORDER BY id`)
 	return out, rows.Err()
 }
 
+// Redecidable returns the rows the planner may judge again: work that is still
+// queued and verdicts that were refusals. Finished, retired and in-flight rows
+// are never re-decided — a new verdict must not re-encode a placed file, revive
+// a retired one, or race the encoder for a row it holds.
+//
+// It exists so a ladder change can reach the queue. Without it a verdict is
+// permanent: the planner only decides rows with no decision, so a tier that
+// moved leaves every already-decided row priced at the old rung.
+func (s *Store) Redecidable(ctx context.Context, ids []int64) ([]Undecided, error) {
+	q := `
+SELECT id, path, size_bytes, COALESCE(width,0), COALESCE(height,0), COALESCE(video_codec,''), COALESCE(bitrate_kbps,0),
+       COALESCE(audio_tracks,'[]')
+FROM files
+WHERE probe_key IS NOT NULL AND state IN ('planned','skipped','failed','probed')`
+	args := []any{}
+	if len(ids) > 0 {
+		q += ` AND id IN (` + placeholders(len(ids)) + `)`
+		for _, id := range ids {
+			args = append(args, id)
+		}
+	}
+	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []Undecided
+	for rows.Next() {
+		var u Undecided
+		if err := rows.Scan(&u.ID, &u.Path, &u.Size, &u.Width, &u.Height, &u.Codec, &u.BitrateKbps, &u.AudioTracks); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // Bucket is one row of the plan summary.
 type Bucket struct {
 	Decision    string `json:"decision"`
