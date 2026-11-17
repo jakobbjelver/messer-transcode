@@ -12,7 +12,7 @@ import (
 // real ffmpeg against a real file and reads the real exit code. Set
 // TRANSCODE_REAL_FILE to a path and run:
 //
-//	TRANSCODE_REAL_FILE="/Volumes/Media/..." go test ./internal/transcode -run RealFile -v
+//	TRANSCODE_REAL_FILE="/srv/media/..." go test ./internal/transcode -run RealFile -v
 //
 // A file whose PTS equals its DTS is the interesting case: it is exactly what
 // the null muxer complains about while decoding perfectly.

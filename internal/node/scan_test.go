@@ -14,9 +14,9 @@ func TestGlobToRegexp(t *testing.T) {
 		path    string
 		want    bool
 	}{
-		{"**/Sample/**", "/Volumes/Media/Library/Movies/X (2020)/Sample/x.mkv", true},
-		{"**/Sample/**", "/Volumes/Media/Library/Movies/Sample/x.mkv", true},
-		{"**/Sample/**", "/Volumes/Media/Library/Movies/X (2020)/Feature/x.mkv", false},
+		{"**/Sample/**", "/srv/media/library/movies/X (2020)/Sample/x.mkv", true},
+		{"**/Sample/**", "/srv/media/library/movies/Sample/x.mkv", true},
+		{"**/Sample/**", "/srv/media/library/movies/X (2020)/Feature/x.mkv", false},
 		{"**/*.sample.mkv", "/a/b/movie.sample.mkv", true},
 		{"**/*.sample.mkv", "/a/b/movie.mkv", false},
 		{"**/.*", "/a/.DS_Store", true},
