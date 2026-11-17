@@ -28,7 +28,12 @@ type Options struct {
 	Workers   int
 	Limit     int  // probe at most N files; 0 means all
 	SkipProbe bool // decide from existing probes only
-	Progress  func(Progress)
+	// Redecide re-runs the planner over rows that are queued or were refused,
+	// after the normal pass. It is how a ladder change reaches verdicts taken
+	// before it; finished, retired and in-flight rows are excluded.
+	Redecide    bool
+	RedecideIDs []int64 // narrow the re-decision to these rows; nil means all
+	Progress    func(Progress)
 }
 
 // Progress is one line of feed while the run works.
@@ -48,6 +53,7 @@ type Report struct {
 	Probed       int            `json:"probed"`
 	ProbeErrors  int            `json:"probe_errors"`
 	Decided      int            `json:"decided"`
+	Redecided    int            `json:"redecided"`
 	Gone         int            `json:"gone"`
 	Warnings     []string       `json:"warnings,omitempty"`
 	Buckets      []store.Bucket `json:"buckets"`
@@ -151,6 +157,17 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 		rep.Decided++
 	}
 
+	// 3b. Re-decide on request. The planner only judges rows with no verdict,
+	// so a rung that moved leaves every settled verdict priced at the old one;
+	// this is the explicit way to apply a ladder change to the queue.
+	if opts.Redecide {
+		n, err := Redecide(ctx, opts.Store, opts.Config, opts.RedecideIDs)
+		if err != nil {
+			return nil, err
+		}
+		rep.Redecided = n
+	}
+
 	// 4. Summarise.
 	rep.Buckets, err = opts.Store.Summary(ctx)
 	if err != nil {
@@ -176,6 +193,34 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 func rootExists(root string) bool {
 	info, err := os.Stat(root)
 	return err == nil && info.IsDir()
+}
+
+// Redecide re-runs the planner over queued and refused rows and returns how
+// many verdicts it wrote. ids narrows it to those rows; nil means every row the
+// store considers re-decidable.
+//
+// It is exported because it is the operation an operator reaches for after a
+// ladder change, and because the alternative — a plan run that silently leaves
+// every previous verdict in place — is how a tier fix looks applied and isn't.
+func Redecide(ctx context.Context, st *store.Store, cfg *config.Config, ids []int64) (int, error) {
+	rows, err := st.Redecidable(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	for _, u := range rows {
+		v := planner.DecideFile(u.Path, cfg, plannerFacts(u))
+		d := store.Decision{
+			Decision: v.Decision,
+			Code:     v.Code,
+			Reason:   v.Reason,
+			KeyKbps:  v.TargetKbps,
+			State:    v.State(),
+		}
+		if err := st.SetDecision(ctx, u.ID, d); err != nil {
+			return 0, fmt.Errorf("re-decide %s: %w", u.Path, err)
+		}
+	}
+	return len(rows), nil
 }
 
 func plannerFacts(u store.Undecided) media.Facts {

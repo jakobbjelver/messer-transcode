@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -26,6 +27,8 @@ func cmdPlan(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	workers := fs.Int("workers", 4, "parallel probe workers")
 	limit := fs.Int("limit", 0, "probe at most N files (0 = all)")
 	skipProbe := fs.Bool("no-probe", false, "decide from existing probes only")
+	redecide := fs.Bool("redecide", false, "judge queued and refused rows again (after a ladder change)")
+	redecideIDs := fs.String("ids", "", "comma-separated file ids to limit --redecide to")
 	if err := fs.Parse(args); err != nil {
 		return ExitUsage
 	}
@@ -47,6 +50,20 @@ func cmdPlan(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	}
 	defer func() { _ = st.Close() }()
 
+	// A re-decision limited to ids is how one ladder change is applied to the
+	// handful of rows it affects, without touching the rest of the queue.
+	var ids []int64
+	if strings.TrimSpace(*redecideIDs) != "" {
+		for _, part := range strings.Split(*redecideIDs, ",") {
+			id, convErr := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if convErr != nil {
+				say(stderr, "bad --ids entry %q\n", part)
+				return ExitUsage
+			}
+			ids = append(ids, id)
+		}
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -61,12 +78,14 @@ func cmdPlan(stdout, stderr io.Writer, args []string, jsonOut bool) int {
 	}
 
 	rep, err := plan.Run(ctx, plan.Options{
-		Config:    cfg,
-		Store:     st,
-		Workers:   *workers,
-		Limit:     *limit,
-		SkipProbe: *skipProbe,
-		Progress:  progress,
+		Config:      cfg,
+		Store:       st,
+		Workers:     *workers,
+		Limit:       *limit,
+		SkipProbe:   *skipProbe,
+		Redecide:    *redecide,
+		RedecideIDs: ids,
+		Progress:    progress,
 	})
 	if err != nil {
 		say(stderr, "\n%v\n", err)
@@ -96,7 +115,11 @@ func printPlan(w io.Writer, cfgPath, db string, r *plan.Report) {
 		say(w, "                warning: %s\n", warning)
 	}
 	say(w, "[03] probed     %d of %d needed (%d errors)\n", r.Probed, r.NeedingProbe, r.ProbeErrors)
-	say(w, "[04] decided    %d\n\n", r.Decided)
+	say(w, "[04] decided    %d\n", r.Decided)
+	if r.Redecided > 0 {
+		say(w, "[05] re-decided %d (queued and refused rows judged again)\n", r.Redecided)
+	}
+	say(w, "\n")
 
 	say(w, "%-10s %-22s %6s %12s %12s %12s\n",
 		"DECISION", "REASON", "FILES", "SIZE", "PROJECTED", "SAVE")
