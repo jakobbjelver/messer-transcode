@@ -86,10 +86,31 @@ func Process(ctx context.Context, opts Options, t Task) (Result, error) {
 	return res, nil
 }
 
+// maxInt is the larger of two ints, for message arithmetic.
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // escalateWithin is how far under the quality floor a first attempt may land
 // and still deserve the 1.4x rung. Measured: 89.9 at 6000 kbps and 89.9 at 8400
 // on grain, while a file one or two tenths short recovers at the higher rung.
 const escalateWithin = 1.5
+
+// fitsSizeCeiling reports whether an encode at kbps can still land under the
+// size ceiling for a source at sourceKbps.
+//
+// The output is the video rung plus the audio the remux keeps, so the video
+// alone has to leave room under the ceiling. An unknown source bitrate cannot
+// be judged and is allowed: the verification will catch it either way.
+func fitsSizeCeiling(kbps, sourceKbps int, max float64) bool {
+	if kbps <= 0 || sourceKbps <= 0 || max <= 0 {
+		return true
+	}
+	return float64(kbps) <= (max-escalationHeadroom)*float64(sourceKbps)
+}
 
 // shouldEscalate reports whether a quality miss is close enough for a bigger
 // encode to plausibly fix. A pass is not an escalation, and a tier with no
@@ -111,6 +132,11 @@ const (
 	// routinely, so the floor is a fraction of the projection, not the
 	// projection itself.
 	projectionSlack = 0.7
+	// escalationHeadroom is the share of the source bitrate already spoken for
+	// by audio and container overhead. An escalated video rung must fit under
+	// (size_ratio_max - escalationHeadroom) of the source, or the encode is
+	// guaranteed to be rejected by the ceiling however good it looks.
+	escalationHeadroom = 0.10
 )
 
 // ratioBand bounds the output/source size ratio for one attempt.
@@ -236,8 +262,18 @@ func Split(ctx context.Context, opts Options, t Task) (Result, func(context.Cont
 	// escalation is only worth its encode when the shortfall is small enough
 	// for more bits to plausibly close it.
 	targets := []int{t.TargetKbps}
+	// Why there is no second rung, when there isn't one. A blocked escalation
+	// parks with its real reason instead of pretending the rung was tried.
+	escalationBlocked := ""
 	if t.Decision == "encode" && t.TargetKbps > 0 {
-		targets = append(targets, t.TargetKbps*14/10)
+		next := t.TargetKbps * 14 / 10
+		if fitsSizeCeiling(next, probe.BitrateKbps, cfg.Safety.SizeRatioMax) {
+			targets = append(targets, next)
+		} else {
+			escalationBlocked = fmt.Sprintf(
+				"a %d kbps rung would be %d%% of the source and could not pass the %.2f size ceiling",
+				next, 100*next/maxInt(probe.BitrateKbps, 1), cfg.Safety.SizeRatioMax)
+		}
 	}
 
 	// The floor travels with the tier: a rung with no measurement behind it
@@ -369,9 +405,12 @@ func Split(ctx context.Context, opts Options, t Task) (Result, func(context.Cont
 		if attempt == len(targets)-1 || !shouldEscalate(verdict.VMAF, qualityFloor) {
 			res.Verdict = verdict
 			why := "not worth re-encoding"
-			if attempt < len(targets)-1 {
+			switch {
+			case attempt < len(targets)-1:
 				why = fmt.Sprintf("%.1f below the %.1f floor: a higher rung cannot buy it",
 					qualityFloor-verdict.VMAF, qualityFloor)
+			case escalationBlocked != "":
+				why = escalationBlocked
 			}
 			reason := fmt.Sprintf("best attempt scored %s at %d kbps: %s",
 				verdictDetail(verdict), kbps, why)
