@@ -68,3 +68,29 @@ func TestSDGetsTheBottomRung(t *testing.T) {
 		t.Fatalf("target = %d kbps, want 960 for 576×432", v.TargetKbps)
 	}
 }
+
+// A narrow frame is the case the width rule gets backwards. A 1,436x1,080 4:3
+// master is 1080p: its width is small because the picture is narrow, not
+// because it was mastered small. Reading it as 720p priced it at 2,700 kbps,
+// where Following (1999) scored VMAF 25.5 and parked (2026-11-17).
+func TestNarrowFrameUsesItsHeight(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		width, height int
+		want          int
+	}{
+		{"4:3 1080p master", 1436, 1080, 1080},
+		{"4:3 1080p, exact", 1440, 1080, 1080},
+		{"1.48:1 1080p", 1600, 1080, 1080},
+		{"4:3 4K master", 2880, 2160, 2160},
+		{"4:3 SD stays SD", 576, 432, 432},
+		{"16:9 is still read by width", 1920, 1080, 1080},
+		{"a letterbox is still read by width", 1920, 800, 1080},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NominalHeight(tc.width, tc.height); got != tc.want {
+				t.Fatalf("NominalHeight(%d, %d) = %d, want %d", tc.width, tc.height, got, tc.want)
+			}
+		})
+	}
+}

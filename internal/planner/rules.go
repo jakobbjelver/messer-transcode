@@ -143,7 +143,17 @@ func anyCodec(want, have []string) bool {
 // encode it at the 720p rung — 2,700 kbps for 1920-wide picture — and then fail
 // its own quality check. Width says which format the source came from; height
 // only says how much of the frame is picture.
+//
+// A narrow frame is the case the width rule gets backwards, and the same
+// reasoning fixes it: a 1,436×1,080 4:3 master is 1080p whose width is small
+// because the picture is narrow, not because it was mastered small. Read as
+// 720p it was priced at 2,700 kbps and scored VMAF 25.5 (Following, 2026-11-17).
+// When the aspect is narrower than widescreen by a margin, the height is the
+// honest dimension.
 func NominalHeight(width, height int) int {
+	if width > 0 && height > 0 && float64(width)/float64(height) < narrowAspect {
+		return classFromHeight(height)
+	}
 	switch {
 	case width >= 2560:
 		return 2160
@@ -156,6 +166,24 @@ func NominalHeight(width, height int) int {
 		// there is, and the bottom row of the ladder catches everything.
 		return height
 	}
+}
+
+// narrowAspect is where a frame stops being widescreen: 4:3 (1.33) and 3:2
+// (1.50) are narrow, 16:9 (1.78) and every cinematic ratio are not.
+const narrowAspect = 1.6
+
+// classFromHeight maps a narrow frame's own height onto the same class
+// boundaries the ladder uses, so 4:3 SD stays SD instead of being promoted.
+func classFromHeight(height int) int {
+	switch {
+	case height >= 2000:
+		return 2160
+	case height >= 1000:
+		return 1080
+	case height >= 700:
+		return 720
+	}
+	return height
 }
 
 // TargetKbps picks the first ladder row for the codec whose threshold the
