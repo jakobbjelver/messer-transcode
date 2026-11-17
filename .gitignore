@@ -21,3 +21,7 @@
 
 # Portal action definitions are host-local (Path AHL / ports), never shipped.
 /actions/
+
+# host-local: one machine's actions and working set
+actions/
+.hermes/
