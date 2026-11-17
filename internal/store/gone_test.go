@@ -195,9 +195,12 @@ func TestGoneIsNotCountedAsCatalogue(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// The done row carries a real finish: 1000 in, 400 out.
+	// The done row carries a real finish: 1000 in, 400 out. The output facts
+	// are what a scan compares against, so the probe must carry the size the
+	// rescan will see — a finish without them leaves the row describing the
+	// file that was replaced, and the next scan reads that as a new file.
 	if err := s.Finish(ctx, idOf(t, s, "/lib/done.mkv"), 1000, 400, 95,
-		&media.OutputFacts{Probe: media.Probe{VideoCodec: "hevc"}, MtimeNS: 9}); err != nil {
+		&media.OutputFacts{Probe: media.Probe{VideoCodec: "hevc", SizeBytes: 400}, MtimeNS: 9}); err != nil {
 		t.Fatal(err)
 	}
 
