@@ -250,12 +250,20 @@ GROUP BY run_id, 2`, append(append([]any{}, args...), q.state)...)
 	// Wasted time: rows that were claimed and then failed or were parked. A
 	// failure stamps updated_at, so started_at→updated_at is how long the node
 	// held the file; a plan-time skip was never claimed and adds nothing.
+	//
+	// Both ends are clamped to the run's window. A verdict can be rewritten
+	// days after the run that claimed it — a re-decide does exactly that — and
+	// without the clamp the 17 Nov run read 1,212 wasted minutes and 16 Nov
+	// read sixty hours: a row cannot have spent more time than the run existed.
 	wasted, err := s.db.QueryContext(ctx, `
-SELECT run_id, COALESCE(SUM(CASE WHEN started_at > 0 AND COALESCE(updated_at,0) > started_at
-                                 THEN updated_at - started_at ELSE 0 END), 0)
-FROM files
-WHERE run_id IN (`+ph+`) AND COALESCE(NULLIF(retired_from,''), state) IN ('failed','skipped')
-GROUP BY run_id`, args...)
+SELECT f.run_id, COALESCE(SUM(
+         CASE WHEN f.started_at > 0
+                   AND MIN(COALESCE(f.updated_at,0), r.end_at) > MAX(f.started_at, r.start_at)
+              THEN MIN(COALESCE(f.updated_at,0), r.end_at) - MAX(f.started_at, r.start_at)
+              ELSE 0 END), 0)
+FROM files f JOIN runs r ON r.id = f.run_id
+WHERE f.run_id IN (`+ph+`) AND COALESCE(NULLIF(f.retired_from,''), f.state) IN ('failed','skipped')
+GROUP BY f.run_id`, args...)
 	if err != nil {
 		return nil, err
 	}
