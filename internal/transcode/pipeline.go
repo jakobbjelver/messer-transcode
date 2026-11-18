@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -92,6 +93,97 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// preflightMargin is how far below the floor a sample must land before the file
+// parks without the full encode. One window against the verifier's two is
+// noisier, so a near miss still gets the real measurement.
+const preflightMargin = 2.0
+
+// preflightFractions are the sample windows: exactly the ones the verifier
+// measures, so the sample predicts the verdict instead of forming a third
+// opinion. One window alone is not enough — the same file scored 63.5 at 0.70
+// and 83.9 at 0.40 — and a single unlucky window would park a good file.
+var preflightFractions = []float64{0.40, 0.70}
+
+// preflightMiss reports whether a sample score is far enough below the floor to
+// park without encoding the whole file.
+func preflightMiss(sample, floor, margin float64) bool {
+	return floor > 0 && sample > 0 && floor-sample > margin
+}
+
+// preflight encodes the sample windows at the rung and measures them against
+// the source, returning ok=false whenever it could not measure anything: a
+// failed sample must never block the job.
+//
+// It exists because the ladder cannot tell grain from calm. Measured
+// 2026-11-18: a sixty-second sample of If I Had Legs scored 63.5 where the full
+// encode scored 63.3 — the same verdict for seconds of work instead of twenty
+// minutes.
+func preflight(ctx context.Context, cfg *config.Config, t Task, src string, probe media.Probe, kbps int, window float64) (float64, bool) {
+	if kbps <= 0 || window <= 0 || probe.DurationS < window*2 {
+		return 0, false
+	}
+
+	paths := make([]string, 0, len(preflightFractions))
+	starts := make([]float64, 0, len(preflightFractions))
+	for i, frac := range preflightFractions {
+		start := probe.DurationS * frac
+		if start+window > probe.DurationS {
+			start = probe.DurationS - window
+		}
+		if start < 0 {
+			start = 0
+		}
+		dst := filepath.Join(cfg.Paths.Scratch, fmt.Sprintf("%d.preflight-%d.mkv", t.ID, i))
+		// Samples encode one at a time: a second hardware encoder buys no
+		// aggregate throughput on this machine (measured 1/2/4 concurrent at
+		// identical totals), and it competes with the media volume's reads.
+		if err := ffmpeg.Run(ctx, ffmpeg.BuildSampleEncode(src, dst, start, window, kbps), nil); err != nil {
+			removeAll(paths)
+			return 0, false
+		}
+		paths = append(paths, dst)
+		starts = append(starts, start)
+	}
+	defer removeAll(paths)
+
+	// The windows are independent measurements of the same encode, so they run
+	// together — the same reason the verifier does.
+	type sample struct {
+		mean float64
+		err  error
+	}
+	results := make([]sample, len(starts))
+	var wg sync.WaitGroup
+	for i := range starts {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			score, err := ffmpeg.VMAFWindow(ctx, t.Path, starts[i], paths[i], 0, window)
+			results[i] = sample{mean: score.Mean, err: err}
+		}(i)
+	}
+	wg.Wait()
+
+	sum, n := 0.0, 0
+	for _, r := range results {
+		if r.err == nil && r.mean > 0 {
+			sum += r.mean
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, false
+	}
+	return sum / float64(n), true
+}
+
+// removeAll deletes the sample files, ignoring whatever is already gone.
+func removeAll(paths []string) {
+	for _, p := range paths {
+		_ = os.Remove(p)
+	}
 }
 
 // escalateWithin is how far under the quality floor a first attempt may land
@@ -292,6 +384,26 @@ func Split(ctx context.Context, opts Options, t Task) (Result, func(context.Cont
 		if attempt > 0 {
 			emit("retry", "E_VERIFY_VMAF", fmt.Sprintf("below the quality floor at %d kbps; retrying at %d kbps", targets[0], kbps))
 		}
+
+		// Before the first full encode: sample the film at this rung. A file the
+		// ladder cannot serve shows it in sixty seconds, not half an hour.
+		if attempt == 0 && t.Decision == "encode" && cfg.Safety.VerifyVMAF && qualityFloor > 0 {
+			window := float64(cfg.Safety.VerifySampleSec)
+			if window <= 0 {
+				window = 60
+			}
+			if score, ok := preflight(ctx, cfg, t, src, probe, kbps, window); ok {
+				emit("preflight", "", fmt.Sprintf("%.0f s sample scored vmaf %.1f (floor %.1f)", window, score, qualityFloor))
+				if preflightMiss(score, qualityFloor, preflightMargin) {
+					reason := fmt.Sprintf("a %.0f s sample scored vmaf %.1f at %d kbps (floor %.1f): the full encode cannot reach it",
+						window, score, kbps, qualityFloor)
+					emit("skip", "R_QUALITY_FLOOR", reason)
+					_ = opts.Reporter.Event(ctx, "info", "R_QUALITY_FLOOR", t.ID, reason, "")
+					return res, nil, opts.Reporter.Skip(ctx, t.ID, "R_QUALITY_FLOOR", reason)
+				}
+			}
+		}
+
 		_ = opts.Reporter.SetState(ctx, t.ID, "encoding")
 		emit("encode", "", fmt.Sprintf("%s → %d kbps", t.Decision, kbps))
 
