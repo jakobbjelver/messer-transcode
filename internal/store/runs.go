@@ -251,15 +251,16 @@ GROUP BY run_id, 2`, append(append([]any{}, args...), q.state)...)
 	// failure stamps updated_at, so started_at→updated_at is how long the node
 	// held the file; a plan-time skip was never claimed and adds nothing.
 	//
-	// Both ends are clamped to the run's window. A verdict can be rewritten
-	// days after the run that claimed it — a re-decide does exactly that — and
-	// without the clamp the 17 Nov run read 1,212 wasted minutes and 16 Nov
-	// read sixty hours: a row cannot have spent more time than the run existed.
+	// The transition must have been recorded in the run — or within two hours
+	// after it, since a job claimed at 05:29 can park at 06:00. A verdict
+	// rewritten days later (a re-decide does exactly that) is excluded instead
+	// of being counted as days of encoder time: that is what made the 17 Nov
+	// run read 1,212 minutes and 16 Nov read sixty hours.
 	wasted, err := s.db.QueryContext(ctx, `
 SELECT f.run_id, COALESCE(SUM(
          CASE WHEN f.started_at > 0
-                   AND MIN(COALESCE(f.updated_at,0), r.end_at) > MAX(f.started_at, r.start_at)
-              THEN MIN(COALESCE(f.updated_at,0), r.end_at) - MAX(f.started_at, r.start_at)
+                   AND COALESCE(f.updated_at,0) BETWEEN f.started_at AND r.end_at + 7200
+              THEN COALESCE(f.updated_at,0) - f.started_at
               ELSE 0 END), 0)
 FROM files f JOIN runs r ON r.id = f.run_id
 WHERE f.run_id IN (`+ph+`) AND COALESCE(NULLIF(f.retired_from,''), f.state) IN ('failed','skipped')
