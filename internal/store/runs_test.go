@@ -63,10 +63,13 @@ VALUES (?, 'movies', 4000000000, 1, ?, ?, ?, ?, ?, ?, ?)`,
 
 // A verdict can be rewritten days after the run that claimed it — a re-decide
 // does exactly that — so updated_at is not a reliable end for the row's work.
-// Without a clamp the 17 Nov run read 1,212 wasted minutes and 16 Nov read
-// sixty hours. Waste is bounded by the window: a row cannot have spent more
-// time than the run existed.
-func TestWastedTimeIsClampedToTheRunWindow(t *testing.T) {
+// The 17 Nov run read 1,212 wasted minutes and 16 Nov read sixty hours, purely
+// because rows skipped during them were re-judged the next morning.
+//
+// Waste is only counted when the refusal was recorded in the run (or in the
+// two hours after it, since a job claimed at 05:29 can finish at 06:00). A row
+// whose verdict moved days later contributed nothing that night.
+func TestWastedTimeCountsOnlyRefusalsRecordedInTheRun(t *testing.T) {
 	ctx := context.Background()
 	s := tempStore(t)
 	const run = int64(1794958200)
@@ -77,20 +80,26 @@ INSERT INTO runs (id, start_at, end_at, spec, kind, created_at)
 VALUES (?, ?, ?, ?, ?, ?)`, run, run, end, "weekdays, 00:30–05:30", "weekday", run); err != nil {
 		t.Fatal(err)
 	}
-	// Claimed an hour in, parked — and re-decided three days later.
-	if _, err := s.DB().Exec(`
+	ins := func(path string, started, updated int64) {
+		t.Helper()
+		if _, err := s.DB().Exec(`
 INSERT INTO files (path, library, size_bytes, mtime_ns, state, decision, reason_code,
                    started_at, updated_at, run_id)
-VALUES ('/media/Late/Film.mkv', 'movies', 4000000000, 1, 'skipped', 'skip', 'R_QUALITY_FLOOR', ?, ?, ?)`,
-		run+3600, run+3*86400, run); err != nil {
-		t.Fatal(err)
+VALUES (?, 'movies', 4000000000, 1, 'skipped', 'skip', 'R_QUALITY_FLOOR', ?, ?, ?)`,
+			path, started, updated, run); err != nil {
+			t.Fatal(err)
+		}
 	}
+	// Parked inside the run: an hour of encoder time that bought nothing.
+	ins("/media/A/Parked.mkv", run+3600, run+7200)
+	// Re-decided three days later: its verdict belongs to no run in this window.
+	ins("/media/B/Rewritten.mkv", run+3600, run+3*86400)
 
 	aggs, err := s.RunAggregates(ctx, []int64{run})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := aggs[run].WastedSeconds; got != end-(run+3600) {
-		t.Errorf("wasted = %ds, want %ds (clamped to the window's end)", got, end-(run+3600))
+	if got := aggs[run].WastedSeconds; got != 3600 {
+		t.Errorf("wasted = %ds, want 3600 (only the refusal recorded that night)", got)
 	}
 }
