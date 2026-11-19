@@ -715,6 +715,10 @@ func (a *Agent) runOne(ctx context.Context, job store.Work) {
 	if err != nil {
 		// Encode reported the failure itself; the journal must not re-report it.
 		a.log(transcode.Event{FileID: job.ID, Path: job.Path, Stage: "failed", Message: err.Error()})
+		// The timings still go out: a refused file's encode time is the waste a
+		// run reports, and without it the report can only estimate from the
+		// claim window, which also counts the wait for the encoder.
+		a.reportTiming(context.WithoutCancel(jobCtx), job, encodeTook, 0, wait)
 		a.journal.finish(job.ID)
 		return
 	}

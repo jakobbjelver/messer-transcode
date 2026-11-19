@@ -70,3 +70,29 @@ func TestRatioBandForARemux(t *testing.T) {
 		t.Errorf("band = %.2f–%.2f, want 0.80–1.15", band.Min, band.Max)
 	}
 }
+
+// The duration check exists to catch a truncated encode, not a trailing audio
+// or subtitle tail. Two films parked on 2026-11-19 for a −15.1 s and a −3.5 s
+// delta against a flat 2 s tolerance — 0.2 % and 0.05 % of their length — while
+// a real truncation was 2,101 s. The tolerance therefore scales with the film,
+// with a floor for short files and a cap so it cannot hide a missing reel.
+func TestDurationToleranceScalesWithTheFilm(t *testing.T) {
+	cases := []struct {
+		name   string
+		length float64
+		config float64
+		want   float64
+	}{
+		{"a two-hour film gets about twenty seconds", 6728, 2, 20.184},
+		{"a slightly longer film proportionally more", 7600, 2, 22.8},
+		{"a short file keeps the configured floor", 300, 2, 2},
+		{"the cap keeps it honest on very long files", 20000, 2, 30},
+		{"an operator asking for more gets more", 6728, 45, 45},
+		{"an unknown length falls back to the floor", 0, 2, 2},
+	}
+	for _, c := range cases {
+		if got := durationTolerance(c.length, c.config); math.Abs(got-c.want) > 1e-6 {
+			t.Errorf("%s: durationTolerance(%.0f, %.1f) = %.3f, want %.3f", c.name, c.length, c.config, got, c.want)
+		}
+	}
+}

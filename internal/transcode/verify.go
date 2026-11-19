@@ -53,6 +53,38 @@ type VerifyRules struct {
 	RefPath       string
 }
 
+const (
+	// durationToleranceRatio is how much of a film's own length the duration
+	// check may forgive. A trailing audio or subtitle tail is common in WEB-DL
+	// and does not mean the film is truncated: two films parked on 2026-11-19
+	// for −15.1 s of 6,728 and −3.5 s of 7,600 against a flat 2 s.
+	durationToleranceRatio = 0.003
+	// durationToleranceCap keeps the scaled tolerance from hiding a missing
+	// reel on something very long.
+	durationToleranceCap = 30
+	// defaultDurationTolerance is the floor when the config says nothing.
+	defaultDurationTolerance = 2
+)
+
+// durationTolerance is the configured tolerance widened to a share of the
+// film's own length. An operator who asks for more than the scaling would give
+// keeps their number; the cap only ever applies to the scaled value.
+func durationTolerance(length, configured float64) float64 {
+	if configured <= 0 {
+		configured = defaultDurationTolerance
+	}
+	tol := configured
+	if length > 0 {
+		if scaled := length * durationToleranceRatio; scaled > tol {
+			tol = scaled
+			if tol > durationToleranceCap {
+				tol = durationToleranceCap
+			}
+		}
+	}
+	return tol
+}
+
 // Verify checks an encoded file before it is allowed to replace anything:
 // it decodes, it is the right length, and it is a plausible size.
 func Verify(ctx context.Context, src media.Probe, out string, rules VerifyRules) (Verdict, error) {
@@ -66,10 +98,7 @@ func Verify(ctx context.Context, src media.Probe, out string, rules VerifyRules)
 
 	// 1. Duration.
 	delta := got.DurationS - src.DurationS
-	tol := rules.DurationToleranceS
-	if tol < 0 {
-		tol = 2
-	}
+	tol := durationTolerance(src.DurationS, rules.DurationToleranceS)
 	ok := delta <= tol && delta >= -tol
 	v.Checks = append(v.Checks, Check{
 		Name: "duration", OK: ok,
