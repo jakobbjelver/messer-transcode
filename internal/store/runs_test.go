@@ -103,3 +103,42 @@ VALUES (?, 'movies', 4000000000, 1, 'skipped', 'skip', 'R_QUALITY_FLOOR', ?, ?, 
 		t.Errorf("wasted = %ds, want 3600 (only the refusal recorded that night)", got)
 	}
 }
+
+// Once a failed job reports its stage timings, waste is a measurement rather
+// than an estimate. The claim window includes waiting for the encoder to finish
+// the previous film, which made a night of 50-second samples read as 228
+// minutes.
+func TestWastedTimePrefersTheMeasuredEncodeSeconds(t *testing.T) {
+	ctx := context.Background()
+	s := tempStore(t)
+	const run = int64(1795044600)
+	const end = run + 18000
+
+	if _, err := s.DB().Exec(`
+INSERT INTO runs (id, start_at, end_at, spec, kind, created_at)
+VALUES (?, ?, ?, ?, ?, ?)`, run, run, end, "weekdays, 00:30–05:30", "weekday", run); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB().Exec(`
+INSERT INTO files (id, path, library, size_bytes, mtime_ns, state, decision, reason_code,
+                   started_at, updated_at, run_id)
+VALUES (1, '/media/A/Parked.mkv', 'movies', 4000000000, 1, 'skipped', 'skip',
+        'R_QUALITY_FLOOR', ?, ?, ?)`, run+1000, run+2000, run); err != nil {
+		t.Fatal(err)
+	}
+	// The node's own measurement for that job: 52 seconds of encoder time.
+	if _, err := s.DB().Exec(`
+INSERT INTO events (at, level, code, file_id, message, data)
+VALUES (?, 'info', 'METRICS', 1, 'timings', '{"encode_s":52,"egress_s":0,"wait_s":900}')`,
+		run+2000); err != nil {
+		t.Fatal(err)
+	}
+
+	aggs, err := s.RunAggregates(ctx, []int64{run})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := aggs[run].WastedSeconds; got != 52 {
+		t.Errorf("wasted = %ds, want 52 (the measured encode, not the 1,000 s claim window)", got)
+	}
+}

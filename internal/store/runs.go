@@ -281,6 +281,41 @@ GROUP BY f.run_id`, args...)
 	if err := wasted.Err(); err != nil {
 		return nil, err
 	}
+
+	// The node measures its own encode time and reports it as a METRICS event.
+	// Where every refusal in a run carries one, that measurement is the waste.
+	// The claim window above also counts waiting for the encoder — a prefetched
+	// file waits out the whole previous film — which made a night of fifty-
+	// second samples read as 228 wasted minutes.
+	measured, err := s.db.QueryContext(ctx, `
+SELECT f.run_id,
+       COUNT(DISTINCT f.id),
+       COUNT(DISTINCT e.file_id),
+       COALESCE(SUM(CAST(COALESCE(json_extract(e.data,'$.encode_s'),0) AS REAL)),0)
+FROM files f
+LEFT JOIN events e ON e.file_id = f.id AND e.code = 'METRICS'
+WHERE f.run_id IN (`+ph+`) AND COALESCE(NULLIF(f.retired_from,''), f.state) IN ('failed','skipped')
+GROUP BY f.run_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = measured.Close() }()
+	for measured.Next() {
+		var id int64
+		var refusals, withTiming int
+		var secs float64
+		if err := measured.Scan(&id, &refusals, &withTiming, &secs); err != nil {
+			return nil, err
+		}
+		if withTiming > 0 && withTiming == refusals {
+			a := out[id]
+			a.WastedSeconds = int64(secs)
+			out[id] = a
+		}
+	}
+	if err := measured.Err(); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

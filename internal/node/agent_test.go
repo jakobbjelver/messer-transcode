@@ -17,14 +17,15 @@ import (
 
 // fakeServer answers the node protocol and records what it was told.
 type fakeServer struct {
-	mu         sync.Mutex
-	claims     int
-	states     []map[string]any
-	events     int
-	heartbeats int
-	srv        *httptest.Server
-	claimGate  chan struct{} // when set, a claim blocks until it is closed
-	statesSeen chan struct{} // signal on each state call
+	mu          sync.Mutex
+	claims      int
+	states      []map[string]any
+	events      int
+	eventBodies []map[string]any
+	heartbeats  int
+	srv         *httptest.Server
+	claimGate   chan struct{} // when set, a claim blocks until it is closed
+	statesSeen  chan struct{} // signal on each state call
 }
 
 func newFakeServer(t *testing.T, jobs []store.Work) *fakeServer {
@@ -71,8 +72,11 @@ func newFakeServer(t *testing.T, jobs []store.Work) *fakeServer {
 		_, _ = w.Write([]byte(`{"state":"done"}`))
 	})
 	mux.HandleFunc("POST /api/v1/node/event", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
 		f.events++
+		f.eventBodies = append(f.eventBodies, body)
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -352,4 +356,44 @@ func TestPrefetchStagesAhead(t *testing.T) {
 	if got := f.claimCount(); got > 2 {
 		t.Errorf("claims = %d, want at most 2 (the prefetched job must be reused)", got)
 	}
+}
+
+// A refused job still reports how long it encoded for. Without it the run's
+// waste figure falls back to the claim window, which counts the wait for the
+// encoder and made a night of fifty-second samples read as 228 minutes.
+func TestAFailedJobStillReportsItsTimings(t *testing.T) {
+	f := newFakeServer(t, []store.Work{
+		{ID: 9, Path: "/media/Film.mkv", Decision: "encode", TargetKbps: 6000},
+	})
+	a, _ := agentFor(t, f, "")
+	a.MaxJobs = 1
+	a.Encode = func(ctx context.Context, job store.Work) (func(context.Context) error, error) {
+		time.Sleep(20 * time.Millisecond)
+		return nil, fmt.Errorf("E_VERIFY_SIZE_RATIO: too big")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := a.Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, e := range f.eventBodies {
+		if e["code"] != "METRICS" {
+			continue
+		}
+		var payload struct {
+			EncodeS float64 `json:"encode_s"`
+		}
+		if err := json.Unmarshal([]byte(fmt.Sprint(e["data"])), &payload); err != nil {
+			t.Fatalf("timings payload: %v", err)
+		}
+		if payload.EncodeS <= 0 {
+			t.Errorf("encode_s = %v, want the measured time", payload.EncodeS)
+		}
+		return
+	}
+	t.Errorf("no METRICS event after a failed job; events = %d", f.events)
 }
