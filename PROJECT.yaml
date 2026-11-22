@@ -41,9 +41,6 @@ channels: "issues"                # bug reports and ideas are read; patches are 
 health: /api/v1/health
 
 exceptions:
-  - id: no-screenshot
-    reason: The only dashboard capture shows a real library path and title. A seeded demo capture is the next documentation task, so the title page ships without a picture.
-    expires: 2027-02-28
   - id: react-router
     reason: React Router predates the TanStack Router default; the SPA has five routes and no planned routing change.
     expires: 2027-01-31

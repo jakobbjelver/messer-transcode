@@ -16,6 +16,11 @@ and every decision, and a **native worker** on the host that does the encoding
 with Apple's VideoToolbox. The container never mounts the media library. A
 component that cannot touch the films cannot damage them.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/screen-dark.png">
+  <img src="docs/brand/screen-light.png" alt="The overview: gigabytes returned to disk, the queue by decision, and the last five windows" width="1200">
+</picture>
+
 ## Run
 
 ```sh
