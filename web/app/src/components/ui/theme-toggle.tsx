@@ -12,7 +12,7 @@ import { Moon, Sun } from "@phosphor-icons/react";
  *
  * The glyph is 16 px (`size-4`), the same glyph the generated fronts' 32 px `.pg-icon-btn` draws. The
  * block used 1.2rem (19.2 px) until 2026-11-13, which made the toggle read a size heavier in every
- * React app than on ui.messer.wtf / projects.messer.wtf; the smaller glyph is the family size.
+ * React app than on the static sites that share this shell; the smaller glyph is the family size.
  */
 export function ThemeToggle({
   dark,

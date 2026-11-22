@@ -39,6 +39,13 @@ export type AppShellProps = {
   variant?: "sidebar" | "topbar" | "none";
   /** Page container stop; must match the page's PageContainer. Canon §16. */
   container?: ContainerStop;
+  /**
+   * Where the topbar nav sits. `start` (default) keeps the nav beside the wordmark, the
+   * shape every app has; `end` right-aligns it against the actions cluster, which is the
+   * shape the generated fronts' `.pg-nav` (margin-left:auto) has — the front door uses
+   * it so its bar is the same bar as ui.messer.wtf's.
+   */
+  navAlign?: "start" | "end";
   user?: { name: string; role?: string };
   actions?: ReactNode;
   footer?: ReactNode;
@@ -80,6 +87,7 @@ export function AppShell({
   active,
   variant = "sidebar",
   container = "default",
+  navAlign = "start",
   user,
   actions,
   footer,
@@ -170,7 +178,10 @@ export function AppShell({
       <div
         data-shell-row=""
         className={[
-          "mx-auto flex h-full w-full items-center gap-3 px-4 sm:gap-6 md:px-8",
+          "mx-auto flex h-full w-full items-center gap-3 px-4 md:px-8",
+          // The generated fronts' `.pg-bar__row` is 47px + hairline, 32px padding, 16px gap;
+          // an end-aligned bar is that bar, so it takes that gap too.
+          navAlign === "end" ? "sm:gap-4" : "sm:gap-6",
           CONTAINER[container],
         ]
           .join(" ")
@@ -182,7 +193,18 @@ export function AppShell({
             {brand.name}
           </span>
         </Link>
-        <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        <nav
+          aria-label="Main"
+          className={[
+            "flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto",
+            // `end` right-aligns the LINKS inside the row's free space rather than
+            // narrowing the nav: a second `ml-auto` here would split that space with the
+            // actions wrapper's own and leave the nav floating mid-bar.
+            navAlign === "end" ? "justify-end" : "",
+          ]
+            .join(" ")
+            .trim()}
+        >
           {nav.map((item) => {
             const current = isActiveHref(item.href, active);
             return (

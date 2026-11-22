@@ -9,6 +9,8 @@ export type SettingsSectionProps = {
   onSave?: () => void | Promise<void>;
   dirty?: boolean;
   footer?: ReactNode;
+  /** false ⇒ no bar at all, for a page that owns one Save (see the settings-page block). */
+  bar?: boolean;
 };
 
 /**
@@ -17,6 +19,10 @@ export type SettingsSectionProps = {
  * The parent owns `dirty`; the section owns the pending state. A read-only
  * section (no `onSave`) renders no bar: a permanently disabled Save button is a
  * promise the surface cannot keep.
+ *
+ * `bar={false}` is for the page-level shape (canon §22): the page owns the draft
+ * and one sticky bar, and a section-level bar beside it would be two buttons for
+ * one decision.
  */
 export function SettingsSection({
   title,
@@ -25,6 +31,7 @@ export function SettingsSection({
   onSave,
   dirty = false,
   footer,
+  bar = true,
 }: SettingsSectionProps) {
   const [pending, setPending] = useState(false);
 
@@ -47,7 +54,9 @@ export function SettingsSection({
 
       <div className="px-4 pb-4">{children}</div>
 
-      {footer ??
+      {bar === false
+        ? null
+        : footer ??
         (onSave ? (
           <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-border bg-[var(--background)] px-4 py-3">
             <span
