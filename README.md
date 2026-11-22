@@ -21,6 +21,8 @@ component that cannot touch the films cannot damage them.
   <img src="docs/brand/screen-light.png" alt="The overview: gigabytes returned to disk, the queue by decision, and the last five windows" width="1200">
 </picture>
 
+<img src="docs/brand/demo.gif" alt="The queue in motion: from the overview to a page of files the planner will rewrite" width="1200">
+
 ## Run
 
 ```sh
