@@ -51,6 +51,10 @@ type VerifyRules struct {
 	ExpectedVMAF  float64
 	VMAFTolerance float64
 	RefPath       string
+	// SrcPath is the copy of the source on disk whose picture end is measured
+	// (the staged file in scratch, which is byte-identical to the original).
+	// Empty means the duration check has only the container to go on.
+	SrcPath string
 }
 
 const (
@@ -85,6 +89,26 @@ func durationTolerance(length, configured float64) float64 {
 	return tol
 }
 
+// durationVerdict compares the two files on the basis they share.
+//
+// The video end is used when both were measured, because a container can carry
+// a tail the picture never reaches; otherwise the container is compared, which
+// is what this check has always done. Tolerance scales with the source's own
+// length, so the comparison is not widened by a long subtitle tail.
+func durationVerdict(srcContainer, srcVideoEnd, outContainer, outVideoEnd, configured float64) (bool, string) {
+	srcEnd, outEnd := srcContainer, outContainer
+	basis := ""
+	if srcVideoEnd > 0 && outVideoEnd > 0 {
+		srcEnd, outEnd = srcVideoEnd, outVideoEnd
+		basis = "video end: "
+	}
+	delta := outEnd - srcEnd
+	tol := durationTolerance(srcEnd, configured)
+	ok := delta <= tol && delta >= -tol
+	return ok, fmt.Sprintf("%s%.1fs vs %.1fs (Δ %.1fs, tolerance %.0fs)",
+		basis, outEnd, srcEnd, delta, tol)
+}
+
 // Verify checks an encoded file before it is allowed to replace anything:
 // it decodes, it is the right length, and it is a plausible size.
 func Verify(ctx context.Context, src media.Probe, out string, rules VerifyRules) (Verdict, error) {
@@ -96,14 +120,24 @@ func Verify(ctx context.Context, src media.Probe, out string, rules VerifyRules)
 	}
 	v.Probe = got
 
-	// 1. Duration.
-	delta := got.DurationS - src.DurationS
-	tol := durationTolerance(src.DurationS, rules.DurationToleranceS)
-	ok := delta <= tol && delta >= -tol
+	// 1. Duration, measured on the picture wherever both ends can be measured.
+	//
+	// A container's duration can legitimately exceed the film's: a WEB-DL's
+	// subtitle track may run past the last video frame (Vertigo, 2026-11-24 —
+	// video 7693.35s, audio 7693.38s, the only packet past either a subtitle at
+	// 7723.42s). Comparing containers rejected that encode as 30s short, so the
+	// comparison moves to the last video packet and the container becomes the
+	// fallback for files whose tail cannot be read.
+	srcEnd := 0.0
+	if rules.SrcPath != "" {
+		srcEnd = ffmpeg.VideoEnd(ctx, rules.SrcPath, src.DurationS)
+	}
+	outEnd := ffmpeg.VideoEnd(ctx, out, got.DurationS)
+	ok, durationDetail := durationVerdict(src.DurationS, srcEnd, got.DurationS, outEnd, rules.DurationToleranceS)
 	v.Checks = append(v.Checks, Check{
 		Name: "duration", OK: ok,
 		Code:   "E_VERIFY_DURATION",
-		Detail: fmt.Sprintf("%.1fs vs %.1fs (Δ %.1fs, tolerance %.0fs)", got.DurationS, src.DurationS, delta, tol),
+		Detail: durationDetail,
 	})
 
 	// 2. Size ratio, against the source as it exists on disk.

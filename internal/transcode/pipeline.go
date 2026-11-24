@@ -497,6 +497,7 @@ func Split(ctx context.Context, opts Options, t Task) (Result, func(context.Cont
 			ExpectedVMAF:       expectedVMAF,
 			VMAFTolerance:      cfg.Quality.VMAFTolerance,
 			RefPath:            t.Path,
+			SrcPath:            src,
 		})
 		if err != nil {
 			return res, nil, abort(opts, t, "E_VERIFY_DECODE", err.Error())

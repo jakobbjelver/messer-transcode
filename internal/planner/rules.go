@@ -67,20 +67,30 @@ func Decide(cfg *config.Config, f media.Facts) Verdict {
 			}
 			// Two guards keep the planner from spending an hour to make a file
 			// bigger. Both were found by running the plan over real media.
-			if f.BitrateKbps > 0 && kbps >= f.BitrateKbps {
+			//
+			// The rung is a video bitrate, so it is judged against the picture's
+			// share: on a low-bitrate source the audio is most of the file, and
+			// 1,068 kbps with a 128 kbps track is a 940 kbps picture under a 960
+			// kbps rung — an upward encode that used to read as a 10% saving
+			// (Trailer Park Boys S01E04, 2026-11-24).
+			video := videoShare(f)
+			if f.BitrateKbps > 0 && kbps >= video {
 				return Verdict{
 					Decision: "skip",
 					Code:     "R_ALREADY_LEAN",
-					Reason: fmt.Sprintf("%s at %d kbps is already below the %d kbps target",
-						codecName(f.Codec), f.BitrateKbps, kbps),
+					Reason: fmt.Sprintf("%s at %d kbps%s is already below the %d kbps target",
+						codecName(f.Codec), f.BitrateKbps, videoNote(f, video), kbps),
 				}
 			}
+			// The saving that pays for an encode is file bytes, so the audio
+			// that stays is part of the projection: the video shrinks, the
+			// track does not.
 			if f.BitrateKbps > 0 {
-				if pct := saving(f.BitrateKbps, kbps); pct < cfg.Quality.MinSaving() {
+				if pct := projectedSaving(f, kbps); pct < cfg.Quality.MinSaving() {
 					return Verdict{
 						Decision: "skip",
 						Code:     "R_LOW_SAVING",
-						Reason: fmt.Sprintf("%s at %d kbps → %d kbps saves only %d%%, under the %d%% floor",
+						Reason: fmt.Sprintf("%s at %d kbps → %d kbps saves only %d%% of the file, under the %d%% floor",
 							codecName(f.Codec), f.BitrateKbps, kbps, pct, cfg.Quality.MinSaving()),
 					}
 				}
@@ -246,6 +256,38 @@ func saving(from, to int) int {
 		return 0
 	}
 	return pct
+}
+
+// videoShare is the source's own video bitrate: the file's figure minus the
+// audio that stays behind. It falls back to the file's figure when the probe
+// did not report per-stream audio bitrates — the container is then all there is,
+// and it is what the guards always used.
+func videoShare(f media.Facts) int {
+	if f.AudioKbps > 0 && f.AudioKbps < f.BitrateKbps {
+		return f.BitrateKbps - f.AudioKbps
+	}
+	return f.BitrateKbps
+}
+
+// videoNote is the parenthetical that names the picture's share, for the reason
+// line — empty when the two figures are the same number.
+func videoNote(f media.Facts, video int) string {
+	if video == f.BitrateKbps {
+		return ""
+	}
+	return fmt.Sprintf(" (%d kbps of video)", video)
+}
+
+// projectedSaving is the share of file bytes an encode at kbps would return.
+// The video shrinks and the audio is copied, so the projection has to count
+// both: a rung that lowers the picture is still not worth an encode when the
+// file as a whole barely moves.
+func projectedSaving(f media.Facts, kbps int) int {
+	after := kbps
+	if f.AudioKbps > 0 && f.AudioKbps < f.BitrateKbps {
+		after += f.AudioKbps
+	}
+	return saving(f.BitrateKbps, after)
 }
 
 func codecName(codec string) string {

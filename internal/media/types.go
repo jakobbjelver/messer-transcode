@@ -7,13 +7,17 @@ import "strings"
 
 // AudioTrack is one audio stream as it exists in the file.
 type AudioTrack struct {
-	Index      int    `json:"index"`
-	Codec      string `json:"codec"`
-	Lang       string `json:"lang"`
-	Channels   int    `json:"channels"`
-	Title      string `json:"title,omitempty"`
-	Commentary bool   `json:"commentary,omitempty"`
-	Default    bool   `json:"default,omitempty"`
+	Index    int    `json:"index"`
+	Codec    string `json:"codec"`
+	Lang     string `json:"lang"`
+	Channels int    `json:"channels"`
+	// BitrateKbps is the stream's own bitrate when the container reports one.
+	// It is what separates the picture's bitrate from the file's, which is the
+	// difference between a rung that lowers quality and one that raises it.
+	BitrateKbps int    `json:"bitrate_kbps,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Commentary  bool   `json:"commentary,omitempty"`
+	Default     bool   `json:"default,omitempty"`
 }
 
 // SubTrack is one subtitle stream.
@@ -59,6 +63,11 @@ type Facts struct {
 	Height      int
 	Codec       string
 	BitrateKbps int
+	// AudioKbps is the sum of the audio streams' own bitrates, or zero when the
+	// container did not report them. BitrateKbps is the file's figure, so the
+	// picture's is BitrateKbps - AudioKbps: a rung is picked for the picture,
+	// while the saving that pays for it is measured on the file.
+	AudioKbps   int
 	AudioTracks int
 	AudioCodecs []string // lowercased, in file order
 }
@@ -74,6 +83,7 @@ func (p Probe) Facts() Facts {
 	}
 	for _, a := range p.Audio {
 		f.AudioCodecs = append(f.AudioCodecs, strings.ToLower(a.Codec))
+		f.AudioKbps += a.BitrateKbps
 	}
 	return f
 }

@@ -234,6 +234,7 @@ func plannerFacts(u store.Undecided) media.Facts {
 		f.AudioTracks = len(tracks)
 		for _, t := range tracks {
 			f.AudioCodecs = append(f.AudioCodecs, strings.ToLower(t.Codec))
+			f.AudioKbps += t.BitrateKbps
 		}
 	}
 	return f
