@@ -75,6 +75,7 @@ type rawStream struct {
 	PixFmt      string            `json:"pix_fmt"`
 	Channels    int               `json:"channels"`
 	Duration    string            `json:"duration"`
+	BitRate     string            `json:"bit_rate"`
 	Tags        map[string]string `json:"tags"`
 	Disposition struct {
 		Default         int `json:"default"`
@@ -125,14 +126,19 @@ func FromRaw(raw rawProbe) (media.Probe, error) {
 				duration, _ = strconv.ParseFloat(s.Duration, 64)
 			}
 		case "audio":
+			audioKbps := 0
+			if b, err := strconv.ParseInt(s.BitRate, 10, 64); err == nil && b > 0 {
+				audioKbps = int(b / 1000)
+			}
 			p.Audio = append(p.Audio, media.AudioTrack{
-				Index:      s.Index,
-				Codec:      s.CodecName,
-				Lang:       media.NormaliseLang(s.Tags["language"]),
-				Channels:   s.Channels,
-				Title:      strings.TrimSpace(s.Tags["title"]),
-				Commentary: s.Disposition.Comment == 1 || media.IsCommentary(s.Tags["title"]),
-				Default:    s.Disposition.Default == 1,
+				Index:       s.Index,
+				Codec:       s.CodecName,
+				Lang:        media.NormaliseLang(s.Tags["language"]),
+				Channels:    s.Channels,
+				BitrateKbps: audioKbps,
+				Title:       strings.TrimSpace(s.Tags["title"]),
+				Commentary:  s.Disposition.Comment == 1 || media.IsCommentary(s.Tags["title"]),
+				Default:     s.Disposition.Default == 1,
 			})
 		case "subtitle":
 			p.Subs = append(p.Subs, media.SubTrack{
