@@ -1,9 +1,12 @@
 name: messer-ui conformance
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Weekly, not per push. This pass compares an installed block against registry/<item>; it
+  # answers "has a copy drifted", which a commit does not change, and it was costing a
+  # billed minute on every push. The per-push half of the gate (the static source pass) now
+  # rides in ci.yml, where it adds no job. Run by hand after a messer-ui canon bump.
+  schedule:
+    - cron: "0 4 * * 1"
   workflow_dispatch:
 
 jobs:
