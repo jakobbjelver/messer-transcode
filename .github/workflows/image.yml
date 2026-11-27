@@ -13,6 +13,12 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# A second push while this one is still building is the same image built twice; the newer
+# commit supersedes it, so cancel instead of paying for both.
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}

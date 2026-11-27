@@ -73,24 +73,7 @@ jobs:
         with:
           version: latest
 
-  docker:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/Dockerfile
-          push: false
-          # Without load the image only exists in the buildx cache, and the
-          # "image runs" step below would have nothing to run.
-          load: true
-          tags: messer-transcode:ci
-          # github.sha is a hex digest supplied by GitHub, not free text, and it
-          # is passed as a build arg rather than interpolated into a shell.
-          build-args: |
-            VERSION=ci
-            COMMIT=${{ github.sha }}
-      - name: image runs
-        run: docker run --rm messer-transcode:ci version
+  # The image build lives in image.yml, which runs on the same push and publishes what it
+  # builds. This job built the same Dockerfile a second time just to `docker run version`
+  # it: two runs of the same build, ~2 minutes of runner time, per commit. A broken
+  # Dockerfile still fails loudly — image.yml goes red and nothing is published.
