@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   web:
-    runs-on: ubuntu-latest
+    # Self-hosted: not billed, and immune to the monthly hosted-job cutoff.
+    runs-on: [self-hosted, ci-light]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,7 +42,8 @@ jobs:
       - name: messer check (static)
         run: node .messer-ui/scripts/check.mjs --app . --static
   test:
-    runs-on: ubuntu-latest
+    # Self-hosted: not billed, and immune to the monthly hosted-job cutoff.
+    runs-on: [self-hosted, ci-light]
     needs: web
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +65,8 @@ jobs:
       - run: go test -race ./...
 
   lint:
-    runs-on: ubuntu-latest
+    # Self-hosted: not billed, and immune to the monthly hosted-job cutoff.
+    runs-on: [self-hosted, ci-light]
     needs: web
     steps:
       - uses: actions/checkout@v4
