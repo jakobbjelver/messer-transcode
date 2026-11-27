@@ -30,6 +30,7 @@ deploy:
 
 dev:
   command: make web-dev
+  runner: "~/Scripts/run-transcode-dev.sh"
   ports: [5299, 8299]
   pm2: transcode-dev
   action: actions/actions.json
